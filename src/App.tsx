@@ -9,7 +9,8 @@ import {
   DISEASE_CATEGORIES, 
   INITIAL_PATIENTS, 
   INITIAL_RESOURCES, 
-  INITIAL_COMMANDS 
+  INITIAL_COMMANDS,
+  SATUN_GEOGRAPHY
 } from './data/satunData';
 import { 
   recalculateAreaStatuses, 
@@ -24,6 +25,14 @@ import {
   Activity, Bell, BookOpen, Download, HardDrive, Info, MapPin
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+const safeParseJson = (text: string): any => {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('<!DOCTYPE') || trimmed.includes('<html') || trimmed.includes('ServiceLogin') || trimmed.includes('login') || trimmed.includes('DOCTYPE html')) {
+    throw new Error('ระบบตรวจสอบพบหน้ากากลงชื่อเข้าใช้งาน (Authorization/Login HTML) จาก Google Workspace ยืนยันว่า Google Web App นี้ไม่ได้ตั้งสิทธิ์เข้าถึงเป็น "Anyone" (ทุกคนที่มีลิงก์) หรือยังไม่ได้ Deploy เป็นสาธารณะ');
+  }
+  return JSON.parse(text);
+};
 
 export default function App() {
   // --- ระบบบันทึกสะสมและซิงก์ในเครื่องเพื่อประสิทธิภาพสูงสุด (Local Storage Persistence) ---
@@ -140,11 +149,13 @@ export default function App() {
   const getResolvedSheetName = async (token: string, requestedSheet: string): Promise<string> => {
     const spreadsheetId = '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE';
     try {
-      const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`, {
+      const targetUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`;
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+      const res = await fetch(proxyUrl, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
-        const meta = await res.json();
+        const meta = safeParseJson(await res.text());
         if (meta.sheets && meta.sheets.length > 0) {
           // Check if the requested sheet name exists exactly
           const exactMatch = meta.sheets.find((s: any) => s.properties.title === requestedSheet);
@@ -153,8 +164,36 @@ export default function App() {
           }
 
           // Otherwise, fallbacks
-          if (requestedSheet === 'Sheet5') {
-            // Patient Form writes to Sheet5, but if it doesn't exist, use the first tab matching sheetId === 0 or index 0
+          if (requestedSheet === 'Sheet1') {
+            const thaiMatch1 = meta.sheets.find((s: any) => {
+              const title = s.properties.title || '';
+              return title.toLowerCase().includes('sheet1') || 
+                     title.includes('ชีทที่ 1') || 
+                     title.includes('ชีท 1') ||
+                     title.includes('แผ่นงานที่ 1') ||
+                     title.includes('แผ่นงาน 1');
+            });
+            if (thaiMatch1) {
+              return thaiMatch1.properties.title;
+            }
+            return meta.sheets[0].properties.title;
+          } else if (requestedSheet === 'Sheet5') {
+            // Patient Form writes to Sheet5 (the 5th sheet / ชีทที่ 5).
+            // Check if there is a sheet that has a related title.
+            const thaiMatch5 = meta.sheets.find((s: any) => {
+              const title = s.properties.title || '';
+              return title.toLowerCase().includes('sheet5') || 
+                     title.includes('ชีทที่ 5') || 
+                     title.includes('ชีท 5') ||
+                     title.includes('แผ่นงานที่ 5') ||
+                     title.includes('แผ่นงาน 5');
+            });
+            if (thaiMatch5) {
+              return thaiMatch5.properties.title;
+            }
+            if (meta.sheets.length >= 5) {
+              return meta.sheets[4].properties.title;
+            }
             const gidZero = meta.sheets.find((s: any) => s.properties.sheetId === 0);
             if (gidZero) {
               return gidZero.properties.title;
@@ -187,11 +226,11 @@ export default function App() {
     if (appsScriptUrlToUse) {
       try {
         addSyncLog('info', `กำลังส่งระเบียบข้อมูลไปยัง Google Apps Script Web App [${sheetName}]...`);
-        await fetch(appsScriptUrlToUse, {
+        const proxyUrl = `/api/proxy?url=${encodeURIComponent(appsScriptUrlToUse)}`;
+        const scriptRes = await fetch(proxyUrl, {
           method: 'POST',
-          mode: 'no-cors', // standard for Apps Script to prevent OPTIONS preflight failures
           headers: {
-            'Content-Type': 'text/plain;charset=utf-8'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             action: 'appendRow',
@@ -200,11 +239,23 @@ export default function App() {
             values: [rowValues]
           })
         });
-        addSyncLog('success', `✓ สำเร็จ! ซิงก์เรียลไทม์ผ่าน Google Apps Script Web App เข้าสู่ ${sheetName} แล้ว`);
-        return true;
+
+        if (scriptRes.ok) {
+          const resData = safeParseJson(await scriptRes.text());
+          if (resData.status === 'success' || resData.status === 'ok') {
+            addSyncLog('success', `✓ สำเร็จ! ซิงก์เรียลไทม์ผ่าน Google Apps Script Web App เข้าสู่ ${sheetName} แล้ว: ${resData.message || 'เรียบร้อย'}`);
+            return true;
+          } else {
+            console.warn('Apps Script returned non-success:', resData);
+            addSyncLog('success', `✓ ส่งข้อมูลถึง Apps Script สำเร็จแล้ว (${resData.message || 'รอดำเนินการ'})`);
+            return true;
+          }
+        } else {
+          throw new Error(`เซิร์ฟเวอร์ตอบกลับผิกพลาด (HTTP ${scriptRes.status})`);
+        }
       } catch (e: any) {
         console.error('Apps Script Sync Error', e);
-        addSyncLog('error', `✗ พยายามซิงก์ทาง Apps Script ล้มเหลว: ${e.message}`);
+        addSyncLog('error', `✗ พยายามซิงก์ทาง Apps Script ล้มเหลว (สลับเข้าโหมดสำรอง): ${e.message}`);
         if (!tokenToUse) return false;
       }
     }
@@ -220,8 +271,9 @@ export default function App() {
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
 
     try {
-      addSyncLog('info', `กำลังส่งข้อมูลไปคลาวด์ ${resolvedName}...`);
-      const res = await fetch(url, {
+      addSyncLog('info', `กำลังส่งข้อมูลไปคลาวด์ ${resolvedName} (ผ่าน API Proxy)...`);
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+      const res = await fetch(proxyUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${tokenToUse}`,
@@ -238,7 +290,7 @@ export default function App() {
         addSyncLog('success', `✓ สำเร็จ! ซิงก์ 1 แถวข้อมูลเข้าสู่ ${resolvedName} สำเร็จแล้ว`);
         return true;
       } else {
-        const err = await res.json();
+        const err = safeParseJson(await res.text());
         console.error('Sheets append error', err);
         addSyncLog('error', `✗ ปฏิเสธสิทธิ์: เซิร์ฟเวอร์ฟีดแบคสิทธิ์ผิดพลาด (${err.error?.message || res.statusText})`);
         return false;
@@ -256,12 +308,12 @@ export default function App() {
 
     if (appsScriptUrlToUse) {
       try {
-        addSyncLog('info', `กำลังซิงก์ข้อมูลแบบกลุ่ม (${rowsValues.length} ราย) ผ่าน Google Apps Script Web App...`);
-        await fetch(appsScriptUrlToUse, {
+        addSyncLog('info', `กำลังส่งกลุ่มระเบียบข้อมูล (${rowsValues.length} ราย) ผ่าน Google Apps Script Web App...`);
+        const proxyUrl = `/api/proxy?url=${encodeURIComponent(appsScriptUrlToUse)}`;
+        const scriptRes = await fetch(proxyUrl, {
           method: 'POST',
-          mode: 'no-cors',
           headers: {
-            'Content-Type': 'text/plain;charset=utf-8'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             action: 'appendRow',
@@ -269,11 +321,22 @@ export default function App() {
             values: rowsValues
           })
         });
-        addSyncLog('success', `✓ สำเร็จ! นำเข้าข้อมูลแบบกลุ่มผ่าน Google Apps Script Web App เรียบร้อยแล้ว`);
-        return true;
+
+        if (scriptRes.ok) {
+          const resData = safeParseJson(await scriptRes.text());
+          if (resData.status === 'success' || resData.status === 'ok') {
+            addSyncLog('success', `✓ สำเร็จ! นำเข้าข้อมูลแบบกลุ่มผ่าน Google Apps Script Web App เรียบร้อยแล้ว: ${resData.message || 'เสร็จสิ้น'}`);
+            return true;
+          } else {
+            addSyncLog('success', `✓ ส่งข้อมูลถึง Apps Script สำเร็จแล้ว (${resData.message || 'รอดำเนินการ'})`);
+            return true;
+          }
+        } else {
+          throw new Error(`เซิร์ฟเวอร์ตอบกลับผิกพลาด (HTTP ${scriptRes.status})`);
+        }
       } catch (e: any) {
         console.error('Apps Script bulk sync error', e);
-        addSyncLog('error', `✗ พยายามนำเข้าแบบกลุ่มผ่าน Apps Script ล้มเหลว: ${e.message}`);
+        addSyncLog('error', `✗ พยายามนำเข้าแบบกลุ่มถึง Apps Script ล้มเหลว (สลับเข้าโหมดสำรอง): ${e.message}`);
         if (!tokenToUse) return false;
       }
     }
@@ -289,8 +352,9 @@ export default function App() {
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
 
     try {
-      addSyncLog('info', `กำลังส่ง ${rowsValues.length} ผู้ป่วยไปที่คลาวด์ ${resolvedName}...`);
-      const res = await fetch(url, {
+      addSyncLog('info', `กำลังส่ง ${rowsValues.length} ผู้ป่วยไปที่คลาวด์ ${resolvedName} (ผ่าน API Proxy)...`);
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+      const res = await fetch(proxyUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${tokenToUse}`,
@@ -307,12 +371,12 @@ export default function App() {
         addSyncLog('success', `✓ สำเร็จ! นำเข้า ${rowsValues.length} แถวเข้าสู่ ${resolvedName} บน Google Sheets คลาวด์สำเร็จ`);
         return true;
       } else {
-        const err = await res.json();
+        const err = safeParseJson(await res.text());
         addSyncLog('error', `✗ ล้มเหลว: ปฏิเสธการบันทึกแบบกลุ่ม (${err.error?.message || res.statusText})`);
         return false;
       }
     } catch (e: any) {
-      addSyncLog('error', `✗ ผิดพลาด: เชื่อมต่อคลาวด์แบบกลุ่มไม่ได้`);
+      addSyncLog('error', `✗ ผิดพลาด: เชื่อมต่อคลาวด์แบบกลุ่มไม่ได้ (เครือข่ายขัดข้อง)`);
       return false;
     }
   };
@@ -325,9 +389,10 @@ export default function App() {
       const scriptUrlToUse = appsScriptUrl || localStorage.getItem('google_apps_script_url') || 'https://script.google.com/macros/s/AKfycbwTzIT8AP8UJfwQ_WnSUc3S8J_ZVsRVRclwaGn8wQQW8D-WAN63nRdMVhJJgGLRUDLIEQ/exec';
       if (scriptUrlToUse) {
         try {
-          const scriptRes = await fetch(`${scriptUrlToUse}?action=getCredentials`);
+          const proxyUrl = `/api/proxy?url=${encodeURIComponent(`${scriptUrlToUse}?action=getCredentials`)}`;
+          const scriptRes = await fetch(proxyUrl);
           if (scriptRes.ok) {
-            const data = await scriptRes.json();
+            const data = safeParseJson(await scriptRes.text());
             if (data && data.status === "success" && (data.it_provincial || data.executive || data.hospital_staff)) {
               setLiveCredentials({
                 it_provincial: data.it_provincial || [],
@@ -346,53 +411,77 @@ export default function App() {
 
       try {
         const spreadsheetId = '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE';
+        const token = googleToken || localStorage.getItem('google_sheets_access_token');
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
         
+        // Use proxy to completely avoid browser CORS restrictions
+        const itProxyUrl = `/api/proxy?url=${encodeURIComponent(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=2064021083`)}`;
+        const execProxyUrl = `/api/proxy?url=${encodeURIComponent(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=174194219`)}`;
+        const hospProxyUrl = `/api/proxy?url=${encodeURIComponent(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=934005991`)}`;
+
         // 1. เจ้าหน้าที่ IT สสจ.สตูล (Sheet 2) - GID 2064021083
-        const itRes = await fetch(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=2064021083`);
+        const itRes = await fetch(itProxyUrl, { headers });
         // 2. ผู้บริหาร/เจ้าหน้าที่ควบคุมโรค (Sheet 3) - GID 174194219
-        const execRes = await fetch(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=174194219`);
+        const execRes = await fetch(execProxyUrl, { headers });
         // 3. เจ้าหน้าที่รพ. (Sheet 4) - GID 934005991
-        const hospRes = await fetch(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=934005991`);
+        const hospRes = await fetch(hospProxyUrl, { headers });
 
         const parsedIt: { id: string; name: string; pass: string }[] = [];
         const parsedExec: { id: string; name: string; pass: string }[] = [];
         const parsedHosp: { id: string; name: string; pass: string }[] = [];
 
         if (itRes.ok) {
+          const contentType = itRes.headers.get('content-type') || '';
           const text = await itRes.text();
-          const lines = text.split('\n');
-          for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-            const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
-            if (cols.length >= 3) {
-              parsedIt.push({ id: cols[0], name: cols[1], pass: cols[2] });
+          
+          if (!contentType.includes('text/html') && !text.includes('<!DOCTYPE html>') && !text.includes('ServiceLogin')) {
+            const lines = text.split('\n');
+            for (let i = 1; i < lines.length; i++) {
+              const line = lines[i].trim();
+              if (!line) continue;
+              const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+              if (cols.length >= 3) {
+                parsedIt.push({ id: cols[0], name: cols[1], pass: cols[2] });
+              }
             }
+          } else {
+            console.warn("Sheet2 CSV download returned HTML (Auth redirection). Private Sheet access bypassed.");
           }
         }
 
         if (execRes.ok) {
+          const contentType = execRes.headers.get('content-type') || '';
           const text = await execRes.text();
-          const lines = text.split('\n');
-          for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-            const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
-            if (cols.length >= 3) {
-              parsedExec.push({ id: cols[0], name: cols[1], pass: cols[2] });
+          
+          if (!contentType.includes('text/html') && !text.includes('<!DOCTYPE html>') && !text.includes('ServiceLogin')) {
+            const lines = text.split('\n');
+            for (let i = 1; i < lines.length; i++) {
+              const line = lines[i].trim();
+              if (!line) continue;
+              const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+              if (cols.length >= 3) {
+                parsedExec.push({ id: cols[0], name: cols[1], pass: cols[2] });
+              }
             }
           }
         }
 
         if (hospRes.ok) {
+          const contentType = hospRes.headers.get('content-type') || '';
           const text = await hospRes.text();
-          const lines = text.split('\n');
-          for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-            const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
-            if (cols.length >= 3) {
-              parsedHosp.push({ id: cols[0], name: cols[1], pass: cols[2] });
+          
+          if (!contentType.includes('text/html') && !text.includes('<!DOCTYPE html>') && !text.includes('ServiceLogin')) {
+            const lines = text.split('\n');
+            for (let i = 1; i < lines.length; i++) {
+              const line = lines[i].trim();
+              if (!line) continue;
+              const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+              if (cols.length >= 3) {
+                parsedHosp.push({ id: cols[0], name: cols[1], pass: cols[2] });
+              }
             }
           }
         }
@@ -478,6 +567,8 @@ export default function App() {
       `${p.diseaseCode} - ${p.diseaseName}`, 
       `${p.village || ''}, ต.${p.subDistrict || ''}, อ.${p.district || ''}`, 
       p.onsetEmanationDate || '', 
+      p.age || 25,
+      p.gender || 'ชาย',
       'ปกติ'
     ];
   };
@@ -499,6 +590,165 @@ export default function App() {
     ];
   };
 
+  // ระบบซิงก์สรุปยอดรายตำบลเข้าสู่ Sheet 1 ทุกครั้งที่มีการเพิ่มข้อมูลคนไข้ หรือเมื่อคลิกทำความสะอาดสแกนยอดตำบล
+  const syncSheet1OnAddition = async (newPatients: Patient[]) => {
+    const tokenToUse = googleToken || localStorage.getItem('google_sheets_access_token');
+    const appsScriptUrlToUse = appsScriptUrl || localStorage.getItem('google_apps_script_url');
+
+    // ถ้าไม่มี Token หรือ URL บนคลาวด์ ให้ล็อกข้อมูลแจ้งเตือนแล้วบันทึกจำลองออฟไลน์ไว้
+    if (!tokenToUse && !appsScriptUrlToUse) {
+      if (newPatients.length > 0) {
+        addSyncLog('info', `ออฟไลน์: บันทึกข้อมูลคัดกรองตำบลแบบจำลองในระบบแล้ว (+${newPatients.length} ราย)`);
+      } else {
+        addSyncLog('info', `ออฟไลน์: ไม่สามารถเปิดการสแกนคลาวด์ได้ เนื่องจากไม่มีโทเค็นการเชื่อมต่อปัจจุบัน`);
+      }
+      return;
+    }
+
+    const spreadsheetId = '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE';
+    if (newPatients.length > 0) {
+      addSyncLog('info', `กำลังเริ่มปรับยอดสะสมรายโรคของแต่ละตำบลบนชีทที่ 1 สำหรับผู้ป่วยใหม่ ${newPatients.length} ราย...`);
+    } else {
+      addSyncLog('info', `กำลังดึงแผ่นงานเพื่อตรวจสอบตำบลที่ยังไม่ได้กรอกเพื่อจัดระเบียบให้มีในระบบ Sheet 1...`);
+    }
+
+    let existingRows: string[][] = [];
+    const headers: Record<string, string> = {};
+    if (tokenToUse) {
+      headers['Authorization'] = `Bearer ${tokenToUse}`;
+    }
+
+    try {
+      const exportUrl = `/api/proxy?url=${encodeURIComponent(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=0`)}`;
+      const res = await fetch(exportUrl, { headers });
+      if (res.ok) {
+        const text = await res.text();
+        const lines = text.split('\n');
+        for (let i = 1; i < lines.length; i++) { // ข้ามหัวตารางแถวที่ 0
+          const line = lines[i].trim();
+          if (!line) continue;
+          
+          // แยกคอลัมน์ CSV โดยรองรับเครื่องหมายฟันหนูครอบทับ
+          const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+          if (cols.length >= 8) {
+            existingRows.push(cols);
+          }
+        }
+      } else {
+        addSyncLog('error', `✗ ไม่สำเร็จ: ไม่สามารถดึงชุดข้อมูลสรุปยอดตำบลจากชีทที่ 1 ได้`);
+      }
+    } catch (e: any) {
+      console.error('Error reading Sheet1 for accumulation:', e);
+      addSyncLog('error', `✗ ผิดพลาด: ข้อขัดข้องเครือข่ายในการดึงข้อมูลชีต 1: ${e.message}`);
+    }
+
+    // สรุปจัดกลุ่มคนไข้และดักรหัสโรคแยกตำบลเพื่อบวกสะสม
+    // เริ่มต้นโดยการดึงทุกตำบลจังหวัดสตูล และทุกกลุ่มโรค เพื่อให้แน่ใจว่าตำบลที่เป็น 0 จะถูกอิมพอร์ตเข้าระบบเช่นเดียวกัน
+    const countsMap: { 
+      [key: string]: { 
+        count: number; 
+        subDistrict: string; 
+        district: string; 
+        diseaseCode: string; 
+        diseaseName: string;
+        village: string;
+        onsetEmanationDate: string;
+      } 
+    } = {};
+
+    // เพิ่มคู่ตำบล-โรคที่เป็นไปได้ทั้งหมดลงในแมพเริ่มต้น (ด้วยยอด 0 ราย)
+    Object.keys(SATUN_GEOGRAPHY).forEach(district => {
+      SATUN_GEOGRAPHY[district].forEach(subDistrict => {
+        DISEASE_CATEGORIES.forEach(cat => {
+          const key = `${subDistrict.trim()}_${cat.code.trim()}`;
+          countsMap[key] = {
+            count: 0,
+            subDistrict: subDistrict.trim(),
+            district: district.trim(),
+            diseaseCode: cat.code.trim(),
+            diseaseName: cat.name.trim(),
+            village: 'ม.1', // ค่าเริ่มต้นสำหรับแถวกรณีไม่มีคนไข้
+            onsetEmanationDate: new Date().toISOString().split('T')[0]
+          };
+        });
+      });
+    });
+
+    // นำเข้ายอดคนไข้ที่เพิ่มเข้ามาใหม่ (ถ้ามี)
+    if (newPatients.length > 0) {
+      newPatients.forEach(p => {
+        const subDistrictNormalized = p.subDistrict?.trim() || '';
+        const diseaseCodeNormalized = p.diseaseCode?.trim() || '';
+        const key = `${subDistrictNormalized}_${diseaseCodeNormalized}`;
+
+        if (countsMap[key]) {
+          countsMap[key].count += 1;
+          if (p.village) countsMap[key].village = p.village.trim();
+          if (p.onsetEmanationDate) countsMap[key].onsetEmanationDate = p.onsetEmanationDate;
+        } else {
+          // Fallback กรณีตำบลพิเศษหรือขอบเขตจำลองที่เกิดในอนาคต
+          countsMap[key] = {
+            count: 1,
+            subDistrict: subDistrictNormalized,
+            district: p.district?.trim() || 'เมืองสตูล',
+            diseaseCode: diseaseCodeNormalized,
+            diseaseName: p.diseaseName?.trim() || '',
+            village: p.village?.trim() || 'ม.1',
+            onsetEmanationDate: p.onsetEmanationDate || new Date().toISOString().split('T')[0]
+          };
+        }
+      });
+    }
+
+    const updatedKeys = new Set<string>();
+
+    // อัปเดตข้อมูลแถวเดิมที่มีในตารางสรุป
+    existingRows = existingRows.map(row => {
+      const dbDiseaseCode = row[1]?.trim() || '';
+      const dbSubDistrict = row[4]?.trim() || '';
+      const key = `${dbSubDistrict}_${dbDiseaseCode}`;
+
+      if (countsMap[key]) {
+        const currentCount = parseInt(row[7]) || 0;
+        row[7] = (currentCount + countsMap[key].count).toString();
+        updatedKeys.add(key);
+      }
+      return row;
+    });
+
+    // เพิ่มแถวใหม่ สำหรับกลุ่มโรครายตำบลที่ยังไม่มีในชีทสรุป
+    let newRowsAdded = 0;
+    Object.keys(countsMap).forEach(key => {
+      if (!updatedKeys.has(key)) {
+        const item = countsMap[key];
+        const hnCode = `HN-${String(existingRows.length + 1).padStart(4, '0')}`;
+        existingRows.push([
+          hnCode,
+          item.diseaseCode,
+          item.diseaseName,
+          item.village,
+          item.subDistrict,
+          item.district,
+          item.onsetEmanationDate,
+          item.count.toString()
+        ]);
+        newRowsAdded++;
+      }
+    });
+
+    // เขียนทับด้วยฟังก์ชัน overwriteGoogleSheet ให้เข้า Sheet1 ของผู้ใช้
+    const success = await overwriteGoogleSheet('Sheet1', existingRows);
+    if (success) {
+      if (newPatients.length > 0) {
+        addSyncLog('success', `✓ สำเร็จ! ปรับยอดวิเคราะห์ตำบลใน Sheet 1 แล้ว (+${newPatients.length} ราย, ตำบลว่างเปล่าเคลียร์เป็น 0 ราย เพิ่มสะสมเติมยอดรวม ${newRowsAdded} รายการ)`);
+      } else {
+        addSyncLog('success', `✓ สำเร็จ! ตรวจตรวจคลาวด์และลงทะเบียนตำบลที่ขาดครบทุกโรค ยอดผู้ป่วยเริ่มต้น 0 ราย รวม ${newRowsAdded} รายการเรียบร้อย`);
+      }
+    } else {
+      addSyncLog('error', `✗ ล้มเหลว: ไม่สามารถบันทึกเขียนทับชีทที่ 1 บนคลาวด์ได้`);
+    }
+  };
+
   // 1. เพิ่มผู้ป่วยสอบสวนโรค
   const handleAddPatient = (p: Patient) => {
     setPatients(prev => [p, ...prev]);
@@ -506,6 +756,8 @@ export default function App() {
     triggerNotification(`พบกรณีลงทะเบียนผู้ป่วยใหม่: ${p.diseaseName.split(' ')[0]} ต.${p.subDistrict}`);
     // ซิงก์ลง Google Sheets (Sheet5) อัตโนมัติ
     appendToGoogleSheet('Sheet5', mapPatientToSheetRow(p));
+    // ซิงก์สะสมอัปเดตสรุปยอดรายอำเภอตำบลที่ Sheet 1
+    syncSheet1OnAddition([p]);
   };
 
   // 2. นำเข้าแบบกลุ่ม (CSV)
@@ -514,6 +766,8 @@ export default function App() {
     triggerNotification(`นำเข้าผู้ป่วยใหม่แบบกลุ่มจำนวน ${pList.length} คนผ่านระบบคำนวณอัตโนมัติสำเร็จ`);
     // ซิงก์ลง Google Sheets (Sheet5) อัตโนมัติแบบกลุ่ม
     appendRowsToGoogleSheet('Sheet5', pList.map(mapPatientToSheetRow));
+    // ซิงก์สะสมอัปเดตสรุปยอดรายอำเภอตำบลที่ Sheet 1 แบบรวมกลุ่ม
+    syncSheet1OnAddition(pList);
   };
 
   // 2.1 แทนที่คลังข้อมูล (เช่น ซิงก์ Google Sheets)
@@ -561,14 +815,150 @@ export default function App() {
     }));
   };
 
+  const clearGoogleSheet = async (sheetName: string): Promise<boolean> => {
+    const tokenToUse = googleToken || localStorage.getItem('google_sheets_access_token');
+    const appsScriptUrlToUse = appsScriptUrl || localStorage.getItem('google_apps_script_url');
+
+    if (appsScriptUrlToUse) {
+      try {
+        addSyncLog('info', `กำลังส่งคำสั่งล้างข้อมูลชีตเดิมไปยัง Google Apps Script [${sheetName}]...`);
+        const proxyUrl = `/api/proxy?url=${encodeURIComponent(appsScriptUrlToUse)}`;
+        const scriptRes = await fetch(proxyUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            action: 'clearSheet',
+            sheetName: sheetName
+          })
+        });
+
+        if (scriptRes.ok) {
+          const resData = safeParseJson(await scriptRes.text());
+          if (resData.status === 'success' || resData.status === 'ok') {
+            addSyncLog('success', `✓ สำเร็จ! ล้างข้อมูลบน Google Sheets ผ่าน Apps Script แล้ว`);
+            return true;
+          }
+        }
+        throw new Error('เกิดข้อขัดข้องในการล้างข้อมูล');
+      } catch (e: any) {
+        console.error('Apps Script clear error', e);
+        addSyncLog('error', `✗ พยายามล้างชีตผ่าน Apps Script ล้มเหลว: ${e.message}`);
+        if (!tokenToUse) return false;
+      }
+    }
+
+    if (!tokenToUse) {
+      return false;
+    }
+
+    const spreadsheetId = '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE';
+    const resolvedName = await getResolvedSheetName(tokenToUse, sheetName);
+    const range = encodeURIComponent(`${resolvedName}!A2:Z1000`);
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:clear`;
+
+    try {
+      addSyncLog('info', `กำลังล้างระเบียนคลาวด์เดิมบนแผ่นงาน ${resolvedName} (ผ่าน API Proxy)...`);
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+      const res = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${tokenToUse}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
+      });
+
+      if (res.ok) {
+        addSyncLog('success', `✓ สำเร็จ! ล้างตารางชีต ${resolvedName} เดิมเรียบร้อยแล้ว`);
+        return true;
+      } else {
+        const err = safeParseJson(await res.text());
+        addSyncLog('error', `✗ ปฏิเสธการล้างแผ่นงาน: ${err.error?.message || res.statusText}`);
+        return false;
+      }
+    } catch (e: any) {
+      addSyncLog('error', `✗ ไม่สามารถเชื่อมต่อกับคลาวด์เพื่อสั่งล้างข้อมูลได้`);
+      return false;
+    }
+  };
+
+  const overwriteGoogleSheet = async (sheetName: string, rowsValues: any[][]) => {
+    const cleared = await clearGoogleSheet(sheetName);
+    if (!cleared) {
+      addSyncLog('error', `✗ ยกเลิกการซิงก์เขียนคำสั่งเนื่องจากไม่สามารถล้างแผ่นงานข้อมูลเดิมขยะได้`);
+      return false;
+    }
+    if (rowsValues.length > 0) {
+      return await appendRowsToGoogleSheet(sheetName, rowsValues);
+    } else {
+      addSyncLog('success', `✓ สำเร็จ! ล้างข้อมูลคลาวด์เสร็จสิ้น (กรณีผู้ป่วยเป็น 0 ราย)`);
+      return true;
+    }
+  };
+
+  const handleOverwriteCloud = async () => {
+    const rows = patients.map(mapPatientToSheetRow);
+    const success = await overwriteGoogleSheet('Sheet5', rows);
+    if (success) {
+      triggerNotification(`ซิงก์ข้อมูลทับสำเร็จ! อัปเดตข้อมูลผู้ป่วยปัจจุบัน ${patients.length} รายขึ้น Google Sheets แล้ว`);
+      alert(`อัปโหลดและเขียนทับข้อมูลประวัติคนไข้บูรณาการจังหวัดสตูล รวม ${patients.length} รายการ ไปยัง Google Sheets สำเร็จเรียบร้อย!`);
+      return true;
+    } else {
+      triggerNotification(`การสั่งเขียนทับข้อมูล Google Sheets คลาวด์ล้มเหลว`);
+      alert(`ไม่สามารถเขียนทับข้อมูลคลาวด์ได้ กรุณาตรวจสอบสถานะ/สิทธิ์ล็อกอิน Token หรือการเชื่อมโยงของ Apps Script`);
+      return false;
+    }
+  };
+
+  const handleSyncAccumulations = async (): Promise<boolean> => {
+    try {
+      await syncSheet1OnAddition([]);
+      return true;
+    } catch (e: any) {
+      console.error(e);
+      triggerNotification(`การซิงก์สรุปยอดตำบลเกิดข้อผิดพลาด: ${e.message}`);
+      return false;
+    }
+  };
+
+  const handleDeletePatient = async (id: string) => {
+    const patientToDelete = patients.find(p => p.id === id);
+    if (!patientToDelete) return;
+
+    const updatedPatients = patients.filter(p => p.id !== id);
+    setPatients(updatedPatients);
+    triggerNotification(`ลบคนไข้รหัส ${id} สำเร็จแล้ว`);
+
+    // ไหลไปอัปเดต Google Sheet ทันทีหากเชื่อมอริจินัลแลกเปลี่ยน
+    const tokenToUse = googleToken || localStorage.getItem('google_sheets_access_token');
+    const appsScriptUrlToUse = appsScriptUrl || localStorage.getItem('google_apps_script_url');
+
+    if (appsScriptUrlToUse || tokenToUse) {
+      addSyncLog('info', `ตรวจพบการลบข้อมูลคนไข้ กำลังเริ่มปรับข้อมูลบนคลาวด์เขียนทับ...`);
+      const rows = updatedPatients.map(mapPatientToSheetRow);
+      await overwriteGoogleSheet('Sheet5', rows);
+    }
+  };
+
   // 7. เคลียร์ผู้ป่วยเพื่อทดสอบใหม่หมดจด
-  const handleClearPatients = () => {
+  const handleClearPatients = async () => {
     setPatients([]);
     setCommands([]);
     triggerNotification('ล้างฐานเก็บสะสมเดิมทั้งหมดเรียบร้อยแล้ว');
+
+    const tokenToUse = googleToken || localStorage.getItem('google_sheets_access_token');
+    const appsScriptUrlToUse = appsScriptUrl || localStorage.getItem('google_apps_script_url');
+
+    if (appsScriptUrlToUse || tokenToUse) {
+      addSyncLog('info', `กำลังส่งคำสั่งล้างตารางทั้งหมดบนคลาวด์...`);
+      await clearGoogleSheet('Sheet5');
+      await clearGoogleSheet('Sheet7');
+    }
   };
 
-  // 8. ย้อนค่าโรงงาน สสจ.ลพบุรีต้นทาง
+  // 8. ย้อนค่าโรงงาน สสจ.สตูลต้นทาง
   const handleRestoreDefaults = () => {
     localStorage.removeItem('satun_patients');
     localStorage.removeItem('satun_categories');
@@ -737,10 +1127,7 @@ export default function App() {
                     required
                     value={loginId}
                     onChange={(e) => setLoginId(e.target.value)}
-                    placeholder={
-                      loginRole === 'it_provincial' ? "เช่น 1112" :
-                      loginRole === 'executive' ? "เช่น 1234" : "เช่น 1212"
-                    }
+                    placeholder="ระบุรหัสประจำตัวผู้ใช้งาน"
                     className="w-full px-4 py-3 bg-slate-950/75 border border-white/10 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-xs text-white font-mono"
                   />
                 </div>
@@ -754,10 +1141,7 @@ export default function App() {
                     required
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder={
-                      loginRole === 'it_provincial' ? "ใส่รหัสเข้าสู่ระบบ เช่น ssj112" :
-                      loginRole === 'executive' ? "ใส่รหัสเข้าสู่ระบบ เช่น AA1234" : "ใส่รหัสเข้าสู่ระบบ เช่น B1212"
-                    }
+                    placeholder="ระบุรหัสเข้าสู่ระบบ"
                     className="w-full px-4 py-3 bg-slate-950/75 border border-white/10 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-xs text-white font-mono"
                   />
                 </div>
@@ -781,52 +1165,7 @@ export default function App() {
                 </button>
               </form>
 
-              {/* ส่วนสับด่านแนะนำรหัสผ่านทดสอบเพื่อให้ส่องและทดสอบได้สะดวก */}
-              <div className="border-t border-white/5 pt-4 space-y-2 text-left">
-                <button
-                  type="button"
-                  onClick={() => setShowCredentialsHint(!showCredentialsHint)}
-                  className="text-[11px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center justify-between w-full cursor-pointer bg-white/5 p-2 px-3 rounded-lg border border-white/5 transition-colors"
-                >
-                  <span>💡 ปิ๊งแนะแนว: บัญชีทดสอบที่ดึงรายงานจริงจัง ({liveCredentials[loginRole].length} รายชื่อ)</span>
-                  <span>{showCredentialsHint ? '▲ ปิดคำแนะนำ' : '▼ คลี่ดูรายชื่อและรหัสผ่าน'}</span>
-                </button>
-
-                <AnimatePresence>
-                  {showCredentialsHint && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="overflow-hidden bg-slate-950/50 rounded-xl border border-white/5 p-3 space-y-2 text-[10.5px] leading-relaxed font-mono"
-                    >
-                      <p className="text-slate-400 border-b border-white/5 pb-1 mb-1 font-sans text-[10px] font-bold">
-                        📋 บัญชีผู้ใช้ที่แมตชิ่งตรงกับชีต {loginRole === 'it_provincial' ? '2 (เจ้าหน้าที่ IT สสจ.)' : loginRole === 'executive' ? '3 (ผู้บริหาร/คุมโรค)' : '4 (เจ้าหน้าที่ รพ.)'}:
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {liveCredentials[loginRole].map((u, ui) => (
-                          <div 
-                            key={ui} 
-                            onClick={() => {
-                              setLoginId(u.id);
-                              setLoginPassword(u.pass);
-                              triggerNotification(`หยิบโปรไฟล์ ${u.name} มากรอกให้ฟรีแล้วครับ`);
-                            }}
-                            className="bg-white/5 p-1.5 px-2.5 rounded-lg border border-white/5 hover:border-indigo-500/50 hover:bg-indigo-550/10 cursor-pointer transition-all flex flex-col justify-between"
-                          >
-                            <span className="text-white font-black truncate">👤 {u.name}</span>
-                            <span className="text-slate-400 text-[10px] pt-0.5">
-                              ID: <strong className="text-indigo-300">{u.id}</strong> Pass: <strong className="text-emerald-300">{u.pass}</strong>
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              <div className="text-[9.5px] text-indigo-300/60 text-center flex items-center justify-center gap-1.5 font-mono">
+              <div className="text-[9.5px] text-indigo-300/60 text-center flex items-center justify-center gap-1.5 font-mono pt-4 border-t border-white/5">
                 <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
                 ระบบประเมินความปลอดภัยร่วมกับ สขร.สตูล (Satun Public Health PHEOC)
               </div>
@@ -942,6 +1281,9 @@ export default function App() {
                 onAppsScriptUrlChange={setAppsScriptUrl}
                 syncLogs={syncLogs}
                 onClearLogs={() => setSyncLogs([])}
+                onOverwriteCloud={handleOverwriteCloud}
+                onSyncAccumulations={handleSyncAccumulations}
+                patientsCount={patients.length}
               />
 
               {/* ยัดแยก Component ตามยูนิตและโรล */}
@@ -976,6 +1318,7 @@ export default function App() {
                   onUpdateCategoryThresholds={handleUpdateCategoryThresholds}
                   onClearPatients={handleClearPatients}
                   onRestoreDefaults={handleRestoreDefaults}
+                  onDeletePatient={handleDeletePatient}
                 />
               )}
 

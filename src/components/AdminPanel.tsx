@@ -18,6 +18,7 @@ interface AdminPanelProps {
   onUpdateCategoryThresholds: (code: string, yellow: number, red: number) => void;
   onClearPatients: () => void;
   onRestoreDefaults: () => void;
+  onDeletePatient?: (id: string) => void;
 }
 
 export default function AdminPanel({
@@ -26,7 +27,8 @@ export default function AdminPanel({
   areaStatuses,
   onUpdateCategoryThresholds,
   onClearPatients,
-  onRestoreDefaults
+  onRestoreDefaults,
+  onDeletePatient
 }: AdminPanelProps) {
   // ควบคุมเซ็ตย่อยของแผงอักษร
   const [activeAdminSubTab, setActiveAdminSubTab] = useState<'rules' | 'db' | 'stats'>('rules');
@@ -226,12 +228,13 @@ export default function AdminPanel({
                     <th className="p-3">พื้นที่พิกัดที่อยู่ (ตำบล/อำเภอ)</th>
                     <th className="p-3">วันที่เริ่มป่วย</th>
                     <th className="p-3">อายุ/เพศ</th>
+                    {onDeletePatient && <th className="p-3 text-center">จัดการ</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {filteredPatients.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-6 text-center text-slate-400 italic">
+                      <td colSpan={onDeletePatient ? 7 : 6} className="p-6 text-center text-slate-400 italic">
                         ไม่มีประวัติบันทึกตามเงื่อนไขที่เลือก
                       </td>
                     </tr>
@@ -244,6 +247,22 @@ export default function AdminPanel({
                         <td className="p-3 text-slate-600">ต.{p.subDistrict} อ.{p.district}</td>
                         <td className="p-3 text-slate-500 font-mono">{p.onsetEmanationDate}</td>
                         <td className="p-3 font-semibold text-slate-700">{p.age} ปี / {p.gender}</td>
+                        {onDeletePatient && (
+                          <td className="p-3 text-center">
+                            <button
+                              onClick={() => {
+                                if (confirm(`คุณต้องการลบระเบียนผู้ป่วยรหัส ${p.id} (${p.cidEncrypted || ''}) ออกจากระบบสตูลพอร์ทัลหรือไม่?`)) {
+                                  onDeletePatient(p.id);
+                                }
+                              }}
+                              className="text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 p-1.5 px-2.5 rounded-lg transition-all cursor-pointer inline-flex items-center gap-1 font-bold"
+                              title="ลบระเบียนคนไข้นี้"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              ลบ
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))
                   )}
@@ -267,7 +286,7 @@ export default function AdminPanel({
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 leading-relaxed text-slate-600">
             <p className="font-extrabold text-slate-900 flex items-center gap-1.5 text-xs mb-1.5">
               <BarChart3 className="w-4 h-4 text-indigo-600" />
-              รายงานคำนวณตัววัดและทัศนคติวิเคราะห์ตำบล จังหวัดสตูล
+              รายงานการคำนวณตัวชี้วัดและสถิติวิเคราะห์ระดับตำบล จังหวัดสตูล
             </p>
             <p className="text-[11px]">
               แผงควบคุมหลักใช้สูตรระดับสัปดาห์ดึงค่าผู้ป่วยช่วง 14 วันล่าสุด ประเมินความแปรปรวนจาก 14 วันก่อนหน้า และเทียบเคียงมาตรฐานแนวโน้มประวัติศาสตร์ หากดัชนีแตะระดับจะเพิ่มและพยุงพื้นที่เสี่ยงพร้อมรายงานสู่ส่วนบริหารด่วน

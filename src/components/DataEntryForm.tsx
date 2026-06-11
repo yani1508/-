@@ -43,8 +43,8 @@ export default function DataEntryForm({
   const [gender, setGender] = useState<'ชาย' | 'หญิง'>('ชาย');
 
   // ข้อมูลเชื่อมโยง Google Sheets
-  const [sheetUrl, setSheetUrl] = useState('https://docs.google.com/spreadsheets/d/1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE/edit?gid=0#gid=0');
-  const [sheetGid, setSheetGid] = useState('0');
+  const [sheetUrl, setSheetUrl] = useState('https://docs.google.com/spreadsheets/d/1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE/edit?gid=1433180548#gid=1433180548');
+  const [sheetGid, setSheetGid] = useState('1433180548');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -173,15 +173,31 @@ export default function DataEntryForm({
         throw new Error('ลิงก์ Google Sheets ไม่ถูกต้อง กรุณาอ้างอิง URL แถบค้นหาจริงของตารางชีต');
       }
 
-      logs.push(`[เชื่อมโยง] แปลงลิงก์สำหรับ Export ความปลอดภัยสำเร็จ: ${exportUrl.slice(0, 60)}...`);
+      logs.push(`[เชื่อมโยง] ดึงข้อมูลจำลองปราศจากปัญหา CORS ผ่าน API Proxy...`);
       setSyncLogs([...logs]);
 
-      const response = await fetch(exportUrl);
+      const token = localStorage.getItem('google_sheets_access_token');
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(exportUrl)}`;
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(proxyUrl, { headers });
       if (!response.ok) {
         throw new Error(`การสื่อสารคลาวด์ล้มเหลว (HTTP status ${response.status})`);
       }
 
+      const contentType = response.headers.get('content-type') || '';
       const text = await response.text();
+
+      if (contentType.includes('text/html') || text.includes('<!DOCTYPE html>') || text.includes('login') || text.includes('ServiceLogin')) {
+        throw new Error(
+          'ตรวจพบว่าระบบถูกบล็อกเนื่องจาก Google Sheets นี้เป็นสิทธิ์ส่วนตัว (Private) หรือต้องการสิทธิ์การลงชื่อเข้าใช้ ' +
+          'กรุณาแชร์ตารางให้ "ทุกคนที่มีลิงก์มีสิทธิ์อ่าน" (Anyone with the link can view) หรือทำตามขั้นตอนลงชื่อเข้าใช้ Google ด้วยบัญชีที่มีสิทธิ์ในแถบด้านบน'
+        );
+      }
+
       if (!text || text.trim().length === 0) {
         throw new Error('คลาวด์รับสเปกชีตเป็นเอกสารเปล่า ตรวจสอบสิทธิ์การแชร์ "ทุกคนที่มีลิงก์มีสิทธิ์อ่าน"');
       }
@@ -210,9 +226,15 @@ export default function DataEntryForm({
         }
 
         const rawCid = columns[0] ? columns[0].replace(/\D/g, '') : '';
-        const code = columns[1] ? columns[1].trim().toUpperCase() : '';
         const rawAddress = columns[2] ? columns[2].trim() : '';
         const rawOnset = columns[3] ? columns[3].trim() : '';
+
+        let code = columns[1] ? columns[1].trim().toUpperCase() : '';
+        if (code.includes(' - ')) {
+          code = code.split(' - ')[0].trim();
+        } else if (code.includes(' ')) {
+          code = code.split(' ')[0].trim();
+        }
 
         // 1. ตรรกะแปลงสิทธิบัตร PDPA เฝ้าระวัง
         let cidProcessed = '';
@@ -227,7 +249,7 @@ export default function DataEntryForm({
         const finalCode = matchedCategory ? matchedCategory.code : 'A90';
         const finalName = matchedCategory ? matchedCategory.name : 'ไข้เลือดออก (Dengue Fever)';
 
-        // 3. ตรรกะสเปกตำแหน่งตำบล/อำเภอ พยากรณ์ที่อยู่ สจจ.สตูล
+        // 3. วิเคราะห์จัดหาตำบล/อำเภอ พยากรณ์ที่อยู่ สสจ.สตูล
         let detectedDistrict = 'ละงู';
         let detectedSubDistrict = 'กำแพง';
         let foundSub = false;
@@ -272,6 +294,22 @@ export default function DataEntryForm({
           }
         }
 
+        let ageNum = Math.floor(Math.random() * 50) + 12;
+        if (columns[4]) {
+          const parsed = parseInt(columns[4].replace(/\D/g, ''));
+          if (!isNaN(parsed) && parsed > 0 && parsed < 120) {
+            ageNum = parsed;
+          }
+        }
+
+        let genderVal: 'ชาย' | 'หญิง' = Math.random() > 0.5 ? 'ชาย' : 'หญิง';
+        if (columns[5]) {
+          const g = columns[5].trim();
+          if (g === 'ชาย' || g === 'หญิง' || g === 'Male' || g === 'Female') {
+            genderVal = (g === 'ชาย' || g === 'Male') ? 'ชาย' : 'หญิง';
+          }
+        }
+
         newParsedPatients.push({
           id: `PT-SHEET-${Date.now().toString().slice(-4)}-${i}`,
           cidEncrypted: cidProcessed,
@@ -282,8 +320,8 @@ export default function DataEntryForm({
           district: detectedDistrict,
           onsetEmanationDate: onsetDate,
           reportedDate: new Date().toISOString().split('T')[0],
-          age: Math.floor(Math.random() * 50) + 12, // สุ่มจำลองช่วงอายุ
-          gender: Math.random() > 0.5 ? 'ชาย' : 'หญิง'
+          age: ageNum,
+          gender: genderVal
         });
       }
 
@@ -599,7 +637,7 @@ export default function DataEntryForm({
             {/* 3. สิทธิ์จัดย่านที่อยู่ (จัดตำบลอำเภอ Satun ดัก typo) */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-black text-slate-700">อำเภอสระรบ (ในสตูล)</label>
+                <label className="text-xs font-black text-slate-700">อำเภอ (ในสตูล)</label>
                 <select
                   value={district}
                   onChange={(e) => handleDistrictChange(e.target.value)}
@@ -900,7 +938,7 @@ export default function DataEntryForm({
                 <span className="inline-block px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-bold text-[9px] mb-1">ขั้นตอนที่ 3</span>
                 <p className="font-extrabold text-slate-800">การจับคู่ตำบลอัจฉริยะ</p>
                 <p className="text-slate-500 text-[11px] leading-normal pt-0.5">
-                  ไม่ว่าที่อยู่จะเขียนมาอย่างไร เช่น "ต.ละงู" หรือ "หมู่ 3 ปากน้ำ รพ.สต" อัลกอริทึมจะสแกนหาคำค้นร่วมตำบลในจังหวัดสตูลและพิกัดพยากรณ์แผนที่ดักพิกัดขึ้นเหลือง/แดงให้ท่านทันที โดยเก็บความปลอดภัย CID ทันตสิทธิ PDPA
+                  ไม่ว่าที่อยู่จะเขียนมาอย่างไร เช่น "ต.ละงู" หรือ "หมู่ 3 ปากน้ำ รพ.สต" อัลกอริทึมจะสแกนหาคำค้นร่วมตำบลในจังหวัดสตูลและจัดกลุ่มจำลองพื้นที่ให้อัติโนมัติ โดยเข้ารหัสข้อมูลเลขบัตรประชาชน (CID) เพื่อความปลอดภัยตามมาตรฐาน PDPA
                 </p>
               </div>
             </div>

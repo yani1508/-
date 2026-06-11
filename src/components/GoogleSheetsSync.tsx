@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Link2, AlertCircle, CheckCircle2, ChevronDown, ChevronUp, RefreshCw, LogIn, LogOut, Key, Copy, Check } from 'lucide-react';
 
+const safeParseJson = (text: string): any => {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('<!DOCTYPE') || trimmed.includes('<html') || trimmed.includes('ServiceLogin') || trimmed.includes('login') || trimmed.includes('DOCTYPE html')) {
+    throw new Error('ตรวจพบหน้ากากลงชื่อเข้าใช้งาน (Login HTML) จาก Google Workspace ยืนยันว่า Google Web App นี้ไม่ได้ตั้งสิทธิ์เข้าถึงเป็น "Anyone" (ทุกคนที่มีลิงก์) หรือมีปัญหาด้านความปลอดภัย');
+  }
+  return JSON.parse(text);
+};
+
 interface GoogleSheetsSyncProps {
   token: string | null;
   onTokenChange: (token: string | null) => void;
@@ -9,6 +17,9 @@ interface GoogleSheetsSyncProps {
   syncLogs: { id: string; time: string; type: 'success' | 'error' | 'info'; msg: string }[];
   onClearLogs: () => void;
   spreadsheetId?: string;
+  onOverwriteCloud?: () => Promise<boolean>;
+  onSyncAccumulations?: () => Promise<boolean>;
+  patientsCount?: number;
 }
 
 export function GoogleSheetsSync({
@@ -18,7 +29,10 @@ export function GoogleSheetsSync({
   onAppsScriptUrlChange,
   syncLogs,
   onClearLogs,
-  spreadsheetId = '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE'
+  spreadsheetId = '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE',
+  onOverwriteCloud,
+  onSyncAccumulations,
+  patientsCount = 0
 }: GoogleSheetsSyncProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [manualToken, setManualToken] = useState('');
@@ -146,10 +160,11 @@ export function GoogleSheetsSync({
     setTestResult({ status: 'idle', message: '' });
 
     try {
-      // Test GET request for credentials
-      const res = await fetch(`${scriptUrlInput.trim()}?action=getCredentials`);
+      // Test GET request for credentials via Server-side CORS bypass Proxy
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(`${scriptUrlInput.trim()}?action=getCredentials`)}`;
+      const res = await fetch(proxyUrl);
       if (res.ok) {
-        const data = await res.json();
+        const data = safeParseJson(await res.text());
         if (data.status === 'success') {
           setTestResult({
             status: 'success',
@@ -168,10 +183,9 @@ export function GoogleSheetsSync({
         });
       }
     } catch (error: any) {
-      // When CORS issues or other errors, since it's a script.google.com redirect
       setTestResult({
-        status: 'success',
-        message: `✓ ได้รับการตอบสนองจากอินเทอร์เฟซ Google Apps Script แล้ว! (เครือข่ายพร้อมทำงานส่งข้อมูลแบบเรียลไทม์)`
+        status: 'error',
+        message: `✗ ขอตรวจการตอบรับล้มเหลว: ไม่สามารถสื่อสารอินเทอร์เฟซ Google Apps Script ได้ (${error.message})`
       });
     } finally {
       setTestingConnection(false);
@@ -185,20 +199,22 @@ export function GoogleSheetsSync({
     setTestResult({ status: 'idle', message: '' });
 
     try {
-      const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=properties.title`, {
+      const targetUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=properties.title`;
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+      const res = await fetch(proxyUrl, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
 
       if (res.ok) {
-        const data = await res.json();
+        const data = safeParseJson(await res.text());
         setTestResult({ 
           status: 'success', 
           message: `เชื่อมต่อสำเร็จ! ชีตระดับความลับ: "${data.properties.title || 'เฝ้าระวังโรคสตูล'}" ได้สิทธิ์เขียนข้อมูลลง Sheet 5 และ 7` 
         });
       } else {
-        const err = await res.json();
+        const err = safeParseJson(await res.text());
         setTestResult({ 
           status: 'error', 
           message: `สิทธิ์ Token ไม่ถูกต้อง หรือ Spreadsheet ถูกล็อก: ${err.error?.message || res.statusText}` 
@@ -294,6 +310,32 @@ function doPost(e) {
   var action = params.action;
   var sheetName = params.sheetName || "Sheet5";
   var rowValues = params.values || params.row || [];
+  
+  if (action === "clearSheet") {
+    try {
+      var sheet = ss.getSheetByName(sheetName);
+      if (!sheet) {
+        if (sheetName === "Sheet5") {
+          sheet = ss.getSheets()[4] || ss.getSheets()[0];
+        } else if (sheetName === "Sheet7") {
+          sheet = ss.getSheets()[6] || ss.getSheets()[0];
+        } else {
+          sheet = ss.getSheets()[0];
+        }
+      }
+      if (sheet) {
+        var lastRow = sheet.getLastRow();
+        if (lastRow > 1) {
+          sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).clearContent();
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "ล้างแผ่นงานเดิมสำเร็จ!" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
   
   if (action === "appendRow" || action === "append" || !action) {
     try {
@@ -414,6 +456,41 @@ function doPost(e) {
       {/* ส่วนขยายตั้งค่าซิงก์ */}
       {isOpen && (
         <div className="p-5 border-t border-slate-100 text-xs font-sans space-y-4">
+          
+          {/* ส่วนส่งออก/บันทึกทับข้อมูลขึ้นคลาวด์ หากมีการเพิ่มหรือลบกรณี */}
+          {isConnected && onOverwriteCloud && (
+            <div className="p-3.5 bg-indigo-50/50 border border-indigo-150/70 rounded-xl space-y-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-3xs">
+              <div className="space-y-1">
+                <h4 className="font-extrabold text-[11px] text-indigo-950 flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-indigo-500" />
+                  ซิงก์ข้อมูลไปคลาวด์ (ส่งออก&เขียนทับกรณีทั้งหมด)
+                </h4>
+                <p className="text-[10px] text-indigo-700/80 leading-relaxed font-sans max-w-xl">
+                  นำข้อมูลระเบียนผู้ป่วยปัจจุบันในเว็บนี้ <span className="font-bold text-slate-800">({patientsCount} ราย)</span> ไปเขียนและบันทึกทับใน Google Sheets ของท่าน (ใช้สำหรับซิงก์ข้อมูลให้มีความตรงกันเมื่อมีการเพิ่ม/ลบ ในระบบสตูลพอร์ทัล)
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={onOverwriteCloud}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10.5px] p-2.5 px-4 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  ส่งออกข้อมูลทับชีต (Sheet 5)
+                </button>
+                {onSyncAccumulations && (
+                  <button
+                    type="button"
+                    onClick={onSyncAccumulations}
+                    className="bg-emerald-650 hover:bg-emerald-700 text-white font-bold text-[10.5px] p-2.5 px-4 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                  >
+                    <Database className="w-3.5 h-3.5 text-emerald-100" />
+                    ซิงก์สรุปยอดตำบล (Sheet 1)
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           
           {/* ช่องทางการเชื่อมด้วย Google Apps Script Web App URL (เด่นที่สุดสําหรับผู้ใช้) */}
           <div className="bg-gradient-to-br from-teal-50/50 to-white p-4 rounded-xl border border-teal-150/85 shadow-2xs space-y-3">
