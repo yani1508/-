@@ -17,7 +17,7 @@ export interface Patient {
   gender: 'ชาย' | 'หญิง';
 }
 
-export type AlertLevel = 'green' | 'yellow' | 'red';
+export type AlertLevel = 'green' | 'yellow' | 'orange' | 'red';
 export type TrendDirection = 'stable' | 'increasing' | 'outbreak';
 
 export interface AreaStatus {

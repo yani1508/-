@@ -317,6 +317,15 @@ function doPost(e) {
       if (!sheet) {
         if (sheetName === "Sheet5") {
           sheet = ss.getSheets()[4] || ss.getSheets()[0];
+        } else if (sheetName === "Sheet6") {
+          var sheets = ss.getSheets();
+          for (var i = 0; i < sheets.length; i++) {
+            if (sheets[i].getSheetId() === 847706215) {
+              sheet = sheets[i];
+              break;
+            }
+          }
+          if (!sheet) sheet = ss.getSheets()[5] || ss.getSheets()[0];
         } else if (sheetName === "Sheet7") {
           sheet = ss.getSheets()[6] || ss.getSheets()[0];
         } else {
@@ -343,6 +352,15 @@ function doPost(e) {
       if (!sheet) {
         if (sheetName === "Sheet5") {
           sheet = ss.getSheets()[4] || ss.getSheets()[0];
+        } else if (sheetName === "Sheet6") {
+          var sheets = ss.getSheets();
+          for (var i = 0; i < sheets.length; i++) {
+            if (sheets[i].getSheetId() === 847706215) {
+              sheet = sheets[i];
+              break;
+            }
+          }
+          if (!sheet) sheet = ss.getSheets()[5] || ss.getSheets()[0];
         } else if (sheetName === "Sheet7") {
           sheet = ss.getSheets()[6] || ss.getSheets()[0];
         } else {
@@ -478,16 +496,6 @@ function doPost(e) {
                   <RefreshCw className="w-3.5 h-3.5" />
                   ส่งออกข้อมูลทับชีต (Sheet 5)
                 </button>
-                {onSyncAccumulations && (
-                  <button
-                    type="button"
-                    onClick={onSyncAccumulations}
-                    className="bg-emerald-650 hover:bg-emerald-700 text-white font-bold text-[10.5px] p-2.5 px-4 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
-                  >
-                    <Database className="w-3.5 h-3.5 text-emerald-100" />
-                    ซิงก์สรุปยอดตำบล (Sheet 1)
-                  </button>
-                )}
               </div>
             </div>
           )}
@@ -577,7 +585,7 @@ function doPost(e) {
                   </h4>
                 </div>
                 <ul className="list-disc pl-4 text-slate-500 text-[10px] space-y-0.5">
-                  <li>เมื่อป้อนข้อมูลคนไข้ ระบบจะดึง token บันทึกเข้า <span className="font-bold text-slate-700">Sheet5</span></li>
+                  <li>เมื่อป้อนข้อมูลคนไข้ ระบบจะบันทึกเข้า <span className="font-bold text-slate-700">Sheet5</span></li>
                   <li>คำสั่งผู้พิทักษ์จังหวัดจะบันทึกลง <span className="font-bold text-slate-700">Sheet7</span></li>
                   <li>เป้าหมายที่อยู่ ID: <code className="bg-stone-200/50 p-0.5 px-1 rounded text-[9.5px] font-mono break-all">{spreadsheetId}</code></li>
                 </ul>

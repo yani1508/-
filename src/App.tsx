@@ -19,6 +19,7 @@ import {
 import ExecutiveDashboard from './components/ExecutiveDashboard';
 import DataEntryForm from './components/DataEntryForm';
 import AdminPanel from './components/AdminPanel';
+import HeatmapView from './components/HeatmapView';
 import { GoogleSheetsSync } from './components/GoogleSheetsSync';
 import { 
   ShieldAlert, ShieldCheck, HeartPulse, LogIn, Users, Sliders, 
@@ -37,6 +38,12 @@ const safeParseJson = (text: string): any => {
 export default function App() {
   // --- ระบบบันทึกสะสมและซิงก์ในเครื่องเพื่อประสิทธิภาพสูงสุด (Local Storage Persistence) ---
   const [patients, setPatients] = useState<Patient[]>(() => {
+    const isNewVersion = localStorage.getItem('satun_patients_version_v12');
+    if (!isNewVersion) {
+      localStorage.setItem('satun_patients_version_v12', 'true');
+      localStorage.setItem('satun_patients', JSON.stringify(INITIAL_PATIENTS));
+      return INITIAL_PATIENTS;
+    }
     const saved = localStorage.getItem('satun_patients');
     return saved ? JSON.parse(saved) : INITIAL_PATIENTS;
   });
@@ -78,6 +85,10 @@ export default function App() {
     return localStorage.getItem('satun_active_name') || null;
   });
 
+  const [hasBackup, setHasBackup] = useState<boolean>(() => {
+    return !!localStorage.getItem('satun_patients_backup');
+  });
+
   // --- ระบบเครือข่ายชื่อและรหัสผ่านจาก Google Sheets ทั้ง 3 ชีตหลัก ---
   const [liveCredentials, setLiveCredentials] = useState<{
     it_provincial: { id: string; name: string; pass: string }[];
@@ -110,6 +121,15 @@ export default function App() {
   const [loginRole, setLoginRole] = useState<'it_provincial' | 'executive' | 'hospital_staff'>('it_provincial');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [showCredentialsHint, setShowCredentialsHint] = useState(false);
+
+  // --- สถานะการเข้าดูแแผนระบายความร้อนสาธารณะ (Heatmap Public mode) ---
+  const [viewingHeatmapPublicly, setViewingHeatmapPublicly] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('view') === 'heatmap' || params.get('share') === 'heatmap';
+    }
+    return false;
+  });
 
   // --- ทรัพยากรระบบประสานงานคลาวด์ Google Sheets ---
   const [googleToken, setGoogleToken] = useState<string | null>(() => {
@@ -197,6 +217,27 @@ export default function App() {
             const gidZero = meta.sheets.find((s: any) => s.properties.sheetId === 0);
             if (gidZero) {
               return gidZero.properties.title;
+            }
+            return meta.sheets[0].properties.title;
+          } else if (requestedSheet === 'Sheet6') {
+            // Map status logs write to Sheet6 (the 6th sheet / ชีทที่ 6)
+            const specificMatch = meta.sheets.find((s: any) => s.properties.sheetId === 847706215);
+            if (specificMatch) {
+              return specificMatch.properties.title;
+            }
+            const thaiMatch6 = meta.sheets.find((s: any) => {
+              const title = s.properties.title || '';
+              return title.toLowerCase().includes('sheet6') || 
+                     title.includes('ชีทที่ 6') || 
+                     title.includes('ชีท 6') ||
+                     title.includes('แผ่นงานที่ 6') ||
+                     title.includes('แผ่นงาน 6');
+            });
+            if (thaiMatch6) {
+              return thaiMatch6.properties.title;
+            }
+            if (meta.sheets.length >= 6) {
+              return meta.sheets[5].properties.title;
             }
             return meta.sheets[0].properties.title;
           } else if (requestedSheet === 'Sheet7') {
@@ -590,168 +631,26 @@ export default function App() {
     ];
   };
 
+  // ระบบซิงก์แผนผังความเสี่ยงระดับตำบลเข้าสู่ Sheet 6 ทุกกครั้งที่มีการปรับปรุงข้อมูลประวัติผู้ป่วย
+  const syncSheet6MapData = async (currentPatients: Patient[]) => {
+    // ยกเลิกการเชื่อมต่อกับ Sheet 6 ตามคำสั่งผู้ใช้
+    return;
+  };
+
   // ระบบซิงก์สรุปยอดรายตำบลเข้าสู่ Sheet 1 ทุกครั้งที่มีการเพิ่มข้อมูลคนไข้ หรือเมื่อคลิกทำความสะอาดสแกนยอดตำบล
   const syncSheet1OnAddition = async (newPatients: Patient[]) => {
-    const tokenToUse = googleToken || localStorage.getItem('google_sheets_access_token');
-    const appsScriptUrlToUse = appsScriptUrl || localStorage.getItem('google_apps_script_url');
-
-    // ถ้าไม่มี Token หรือ URL บนคลาวด์ ให้ล็อกข้อมูลแจ้งเตือนแล้วบันทึกจำลองออฟไลน์ไว้
-    if (!tokenToUse && !appsScriptUrlToUse) {
-      if (newPatients.length > 0) {
-        addSyncLog('info', `ออฟไลน์: บันทึกข้อมูลคัดกรองตำบลแบบจำลองในระบบแล้ว (+${newPatients.length} ราย)`);
-      } else {
-        addSyncLog('info', `ออฟไลน์: ไม่สามารถเปิดการสแกนคลาวด์ได้ เนื่องจากไม่มีโทเค็นการเชื่อมต่อปัจจุบัน`);
-      }
-      return;
-    }
-
-    const spreadsheetId = '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE';
-    if (newPatients.length > 0) {
-      addSyncLog('info', `กำลังเริ่มปรับยอดสะสมรายโรคของแต่ละตำบลบนชีทที่ 1 สำหรับผู้ป่วยใหม่ ${newPatients.length} ราย...`);
-    } else {
-      addSyncLog('info', `กำลังดึงแผ่นงานเพื่อตรวจสอบตำบลที่ยังไม่ได้กรอกเพื่อจัดระเบียบให้มีในระบบ Sheet 1...`);
-    }
-
-    let existingRows: string[][] = [];
-    const headers: Record<string, string> = {};
-    if (tokenToUse) {
-      headers['Authorization'] = `Bearer ${tokenToUse}`;
-    }
-
-    try {
-      const exportUrl = `/api/proxy?url=${encodeURIComponent(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=0`)}`;
-      const res = await fetch(exportUrl, { headers });
-      if (res.ok) {
-        const text = await res.text();
-        const lines = text.split('\n');
-        for (let i = 1; i < lines.length; i++) { // ข้ามหัวตารางแถวที่ 0
-          const line = lines[i].trim();
-          if (!line) continue;
-          
-          // แยกคอลัมน์ CSV โดยรองรับเครื่องหมายฟันหนูครอบทับ
-          const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
-          if (cols.length >= 8) {
-            existingRows.push(cols);
-          }
-        }
-      } else {
-        addSyncLog('error', `✗ ไม่สำเร็จ: ไม่สามารถดึงชุดข้อมูลสรุปยอดตำบลจากชีทที่ 1 ได้`);
-      }
-    } catch (e: any) {
-      console.error('Error reading Sheet1 for accumulation:', e);
-      addSyncLog('error', `✗ ผิดพลาด: ข้อขัดข้องเครือข่ายในการดึงข้อมูลชีต 1: ${e.message}`);
-    }
-
-    // สรุปจัดกลุ่มคนไข้และดักรหัสโรคแยกตำบลเพื่อบวกสะสม
-    // เริ่มต้นโดยการดึงทุกตำบลจังหวัดสตูล และทุกกลุ่มโรค เพื่อให้แน่ใจว่าตำบลที่เป็น 0 จะถูกอิมพอร์ตเข้าระบบเช่นเดียวกัน
-    const countsMap: { 
-      [key: string]: { 
-        count: number; 
-        subDistrict: string; 
-        district: string; 
-        diseaseCode: string; 
-        diseaseName: string;
-        village: string;
-        onsetEmanationDate: string;
-      } 
-    } = {};
-
-    // เพิ่มคู่ตำบล-โรคที่เป็นไปได้ทั้งหมดลงในแมพเริ่มต้น (ด้วยยอด 0 ราย)
-    Object.keys(SATUN_GEOGRAPHY).forEach(district => {
-      SATUN_GEOGRAPHY[district].forEach(subDistrict => {
-        DISEASE_CATEGORIES.forEach(cat => {
-          const key = `${subDistrict.trim()}_${cat.code.trim()}`;
-          countsMap[key] = {
-            count: 0,
-            subDistrict: subDistrict.trim(),
-            district: district.trim(),
-            diseaseCode: cat.code.trim(),
-            diseaseName: cat.name.trim(),
-            village: 'ม.1', // ค่าเริ่มต้นสำหรับแถวกรณีไม่มีคนไข้
-            onsetEmanationDate: new Date().toISOString().split('T')[0]
-          };
-        });
-      });
-    });
-
-    // นำเข้ายอดคนไข้ที่เพิ่มเข้ามาใหม่ (ถ้ามี)
-    if (newPatients.length > 0) {
-      newPatients.forEach(p => {
-        const subDistrictNormalized = p.subDistrict?.trim() || '';
-        const diseaseCodeNormalized = p.diseaseCode?.trim() || '';
-        const key = `${subDistrictNormalized}_${diseaseCodeNormalized}`;
-
-        if (countsMap[key]) {
-          countsMap[key].count += 1;
-          if (p.village) countsMap[key].village = p.village.trim();
-          if (p.onsetEmanationDate) countsMap[key].onsetEmanationDate = p.onsetEmanationDate;
-        } else {
-          // Fallback กรณีตำบลพิเศษหรือขอบเขตจำลองที่เกิดในอนาคต
-          countsMap[key] = {
-            count: 1,
-            subDistrict: subDistrictNormalized,
-            district: p.district?.trim() || 'เมืองสตูล',
-            diseaseCode: diseaseCodeNormalized,
-            diseaseName: p.diseaseName?.trim() || '',
-            village: p.village?.trim() || 'ม.1',
-            onsetEmanationDate: p.onsetEmanationDate || new Date().toISOString().split('T')[0]
-          };
-        }
-      });
-    }
-
-    const updatedKeys = new Set<string>();
-
-    // อัปเดตข้อมูลแถวเดิมที่มีในตารางสรุป
-    existingRows = existingRows.map(row => {
-      const dbDiseaseCode = row[1]?.trim() || '';
-      const dbSubDistrict = row[4]?.trim() || '';
-      const key = `${dbSubDistrict}_${dbDiseaseCode}`;
-
-      if (countsMap[key]) {
-        const currentCount = parseInt(row[7]) || 0;
-        row[7] = (currentCount + countsMap[key].count).toString();
-        updatedKeys.add(key);
-      }
-      return row;
-    });
-
-    // เพิ่มแถวใหม่ สำหรับกลุ่มโรครายตำบลที่ยังไม่มีในชีทสรุป
-    let newRowsAdded = 0;
-    Object.keys(countsMap).forEach(key => {
-      if (!updatedKeys.has(key)) {
-        const item = countsMap[key];
-        const hnCode = `HN-${String(existingRows.length + 1).padStart(4, '0')}`;
-        existingRows.push([
-          hnCode,
-          item.diseaseCode,
-          item.diseaseName,
-          item.village,
-          item.subDistrict,
-          item.district,
-          item.onsetEmanationDate,
-          item.count.toString()
-        ]);
-        newRowsAdded++;
-      }
-    });
-
-    // เขียนทับด้วยฟังก์ชัน overwriteGoogleSheet ให้เข้า Sheet1 ของผู้ใช้
-    const success = await overwriteGoogleSheet('Sheet1', existingRows);
-    if (success) {
-      if (newPatients.length > 0) {
-        addSyncLog('success', `✓ สำเร็จ! ปรับยอดวิเคราะห์ตำบลใน Sheet 1 แล้ว (+${newPatients.length} ราย, ตำบลว่างเปล่าเคลียร์เป็น 0 ราย เพิ่มสะสมเติมยอดรวม ${newRowsAdded} รายการ)`);
-      } else {
-        addSyncLog('success', `✓ สำเร็จ! ตรวจตรวจคลาวด์และลงทะเบียนตำบลที่ขาดครบทุกโรค ยอดผู้ป่วยเริ่มต้น 0 ราย รวม ${newRowsAdded} รายการเรียบร้อย`);
-      }
-    } else {
-      addSyncLog('error', `✗ ล้มเหลว: ไม่สามารถบันทึกเขียนทับชีทที่ 1 บนคลาวด์ได้`);
-    }
+    // ยกเลิกการเชื่อมต่อกับ Sheet 1 ตามคำสั่งผู้ใช้
+    return;
   };
 
   // 1. เพิ่มผู้ป่วยสอบสวนโรค
   const handleAddPatient = (p: Patient) => {
-    setPatients(prev => [p, ...prev]);
+    setPatients(prev => {
+      const nextList = [p, ...prev];
+      // ซิงก์แผนผังระดับตำบลเข้าสู่ Sheet 6
+      syncSheet6MapData(nextList);
+      return nextList;
+    });
     // ส่งข้อความความถี่แจ้งเตือนทันที
     triggerNotification(`พบกรณีลงทะเบียนผู้ป่วยใหม่: ${p.diseaseName.split(' ')[0]} ต.${p.subDistrict}`);
     // ซิงก์ลง Google Sheets (Sheet5) อัตโนมัติ
@@ -762,7 +661,12 @@ export default function App() {
 
   // 2. นำเข้าแบบกลุ่ม (CSV)
   const handleBulkAddPatients = (pList: Patient[]) => {
-    setPatients(prev => [...pList, ...prev]);
+    setPatients(prev => {
+      const nextList = [...pList, ...prev];
+      // ซิงก์แผนผังระดับตำบลเข้าสู่ Sheet 6
+      syncSheet6MapData(nextList);
+      return nextList;
+    });
     triggerNotification(`นำเข้าผู้ป่วยใหม่แบบกลุ่มจำนวน ${pList.length} คนผ่านระบบคำนวณอัตโนมัติสำเร็จ`);
     // ซิงก์ลง Google Sheets (Sheet5) อัตโนมัติแบบกลุ่ม
     appendRowsToGoogleSheet('Sheet5', pList.map(mapPatientToSheetRow));
@@ -774,6 +678,8 @@ export default function App() {
   const handleReplacePatients = (pList: Patient[]) => {
     setPatients(pList);
     triggerNotification(`เชื่อมโยงคลังข้อมูลใหม่ ทดแทนประวัติเดิมด้วยข้อมูล Google Sheets จำนวน ${pList.length} รายสำเร็จ`);
+    // ซิงก์แผนผังระดับตำบลเข้าสู่ Sheet 6
+    syncSheet6MapData(pList);
   };
 
   // 3. ปรับเกณฑ์ดักโรค
@@ -816,6 +722,9 @@ export default function App() {
   };
 
   const clearGoogleSheet = async (sheetName: string): Promise<boolean> => {
+    if (sheetName === 'Sheet1' || sheetName === 'Sheet6') {
+      return true;
+    }
     const tokenToUse = googleToken || localStorage.getItem('google_sheets_access_token');
     const appsScriptUrlToUse = appsScriptUrl || localStorage.getItem('google_apps_script_url');
 
@@ -885,6 +794,9 @@ export default function App() {
   };
 
   const overwriteGoogleSheet = async (sheetName: string, rowsValues: any[][]) => {
+    if (sheetName === 'Sheet1' || sheetName === 'Sheet6') {
+      return true;
+    }
     const cleared = await clearGoogleSheet(sheetName);
     if (!cleared) {
       addSyncLog('error', `✗ ยกเลิกการซิงก์เขียนคำสั่งเนื่องจากไม่สามารถล้างแผ่นงานข้อมูลเดิมขยะได้`);
@@ -902,6 +814,7 @@ export default function App() {
     const rows = patients.map(mapPatientToSheetRow);
     const success = await overwriteGoogleSheet('Sheet5', rows);
     if (success) {
+      await syncSheet6MapData(patients);
       triggerNotification(`ซิงก์ข้อมูลทับสำเร็จ! อัปเดตข้อมูลผู้ป่วยปัจจุบัน ${patients.length} รายขึ้น Google Sheets แล้ว`);
       alert(`อัปโหลดและเขียนทับข้อมูลประวัติคนไข้บูรณาการจังหวัดสตูล รวม ${patients.length} รายการ ไปยัง Google Sheets สำเร็จเรียบร้อย!`);
       return true;
@@ -915,6 +828,7 @@ export default function App() {
   const handleSyncAccumulations = async (): Promise<boolean> => {
     try {
       await syncSheet1OnAddition([]);
+      await syncSheet6MapData(patients);
       return true;
     } catch (e: any) {
       console.error(e);
@@ -939,6 +853,7 @@ export default function App() {
       addSyncLog('info', `ตรวจพบการลบข้อมูลคนไข้ กำลังเริ่มปรับข้อมูลบนคลาวด์เขียนทับ...`);
       const rows = updatedPatients.map(mapPatientToSheetRow);
       await overwriteGoogleSheet('Sheet5', rows);
+      await syncSheet6MapData(updatedPatients);
     }
   };
 
@@ -954,12 +869,24 @@ export default function App() {
     if (appsScriptUrlToUse || tokenToUse) {
       addSyncLog('info', `กำลังส่งคำสั่งล้างตารางทั้งหมดบนคลาวด์...`);
       await clearGoogleSheet('Sheet5');
+      await clearGoogleSheet('Sheet6');
       await clearGoogleSheet('Sheet7');
     }
   };
 
   // 8. ย้อนค่าโรงงาน สสจ.สตูลต้นทาง
   const handleRestoreDefaults = () => {
+    // เก็บ Backup ชั่วคราวก่อนย้อนคืนเพื่อความปลอดภัย
+    try {
+      localStorage.setItem('satun_patients_backup', JSON.stringify(patients));
+      localStorage.setItem('satun_categories_backup', JSON.stringify(categories));
+      localStorage.setItem('satun_resources_backup', JSON.stringify(resources));
+      localStorage.setItem('satun_commands_backup', JSON.stringify(commands));
+      setHasBackup(true);
+    } catch (e) {
+      console.error('ไม่สามารถจำล็อกไฟล์กู้ฐานข้อมูลอัตโนมัติได้:', e);
+    }
+
     localStorage.removeItem('satun_patients');
     localStorage.removeItem('satun_categories');
     localStorage.removeItem('satun_resources');
@@ -968,7 +895,43 @@ export default function App() {
     setCategories(DISEASE_CATEGORIES);
     setResources(INITIAL_RESOURCES);
     setCommands(INITIAL_COMMANDS);
-    triggerNotification('ย้อนคืนสิทธิ์ฐานข้อมูลโรงงานจังหวัดสตูลเรียบร้อยแล้ว');
+    triggerNotification('ย้อนคืนสิทธิ์ฐานข้อมูลโรงงานจังหวัดสตูลเรียบร้อยแล้ว (สามารถกดปุ่มกู้คืนข้อมูลเดิมในแผงควบคุมแอดมินได้ทันที)');
+  };
+
+  // 8.5 กู้ข้อมูลหลังเผลอกดรีเซ็ตระบบ
+  const handleUndoRestoreDefaults = () => {
+    const backupPatients = localStorage.getItem('satun_patients_backup');
+    const backupCategories = localStorage.getItem('satun_categories_backup');
+    const backupResources = localStorage.getItem('satun_resources_backup');
+    const backupCommands = localStorage.getItem('satun_commands_backup');
+
+    if (backupPatients || backupCategories || backupResources || backupCommands) {
+      if (backupPatients) {
+        setPatients(JSON.parse(backupPatients));
+        localStorage.setItem('satun_patients', backupPatients);
+      }
+      if (backupCategories) {
+        setCategories(JSON.parse(backupCategories));
+        localStorage.setItem('satun_categories', backupCategories);
+      }
+      if (backupResources) {
+        setResources(JSON.parse(backupResources));
+        localStorage.setItem('satun_resources', backupResources);
+      }
+      if (backupCommands) {
+        setCommands(JSON.parse(backupCommands));
+        localStorage.setItem('satun_commands', backupCommands);
+      }
+
+      localStorage.removeItem('satun_patients_backup');
+      localStorage.removeItem('satun_categories_backup');
+      localStorage.removeItem('satun_resources_backup');
+      localStorage.removeItem('satun_commands_backup');
+      setHasBackup(false);
+      triggerNotification('✓ กู้คืนข้อมูลเดิมก่อนการย้อนค่าโรงงานให้เรียบร้อยแล้ว!');
+    } else {
+      triggerNotification('ไม่พบประวัติข้อมูลสำรองเพื่อทำการกู้คืน');
+    }
   };
 
   // จัดการการส่งข้อมูลฟอร์มยืนยันตัวตน
@@ -1022,7 +985,26 @@ export default function App() {
 
       {/* --- ส่วนล็อกอินคัดบทบาทหน้าแรก (Login Screen Block) --- */}
       <AnimatePresence mode="wait">
-        {!authenticatedRole ? (
+        {viewingHeatmapPublicly ? (
+          <motion.div
+            key="heatmap-view-block"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex-1 flex flex-col"
+          >
+            <HeatmapView 
+              onBackToLogin={() => {
+                if (typeof window !== 'undefined') {
+                  window.history.replaceState({}, document.title, window.location.pathname);
+                }
+                setViewingHeatmapPublicly(false);
+              }}
+              categories={categories}
+              authenticatedRole={authenticatedRole}
+            />
+          </motion.div>
+        ) : !authenticatedRole ? (
           <motion.div
             key="login-view"
             initial={{ opacity: 0 }}
@@ -1067,6 +1049,21 @@ export default function App() {
                 </div>
               </div>
 
+              {hasBackup && (
+                <div className="bg-amber-500/10 border border-amber-550/30 rounded-2xl p-3 text-center space-y-2 animate-pulse">
+                  <p className="text-[10.5px] text-amber-200 font-bold leading-tight">
+                    ⚠️ ตรวจพบข้อมูลสำรองจากการคืนค่าโรงงาน!
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleUndoRestoreDefaults}
+                    className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-extrabold text-[10px] rounded-xl cursor-pointer transition-all shadow-md inline-block"
+                  >
+                    กู้ข้อมูลทั้งหมดคืนทันที (Undo Restore)
+                  </button>
+                </div>
+              )}
+
               {/* แท็บตัวเลือกบทบาทการเข้าถึง เพื่อให้ป้อนและหาจับคู่ถูกต้อง */}
               <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-900/60 rounded-xl border border-white/5">
                 <button
@@ -1081,7 +1078,7 @@ export default function App() {
                       : 'text-indigo-200 hover:text-white hover:bg-white/5'
                   }`}
                 >
-                  ⚙️ IT สสจ.
+                  ⚙️ Admin (IT สสจ.)
                   <span className="block text-[8.5px] opacity-75 font-normal">Sheet 2</span>
                 </button>
                 <button
@@ -1163,6 +1160,21 @@ export default function App() {
                   <LogIn className="w-4 h-4" />
                   เข้าสู่พอร์ทัลความปลอดภัย (Secure Sign In)
                 </button>
+
+                <div className="relative flex py-1 items-center">
+                  <div className="flex-grow border-t border-white/5" />
+                  <span className="flex-shrink mx-3 text-indigo-300/40 text-[9px] font-bold uppercase font-mono">หรือ</span>
+                  <div className="flex-grow border-t border-white/5" />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setViewingHeatmapPublicly(true)}
+                  className="w-full py-3 px-4 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl shadow-lg transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2 border border-rose-500/20"
+                >
+                  <MapPin className="w-4 h-4" />
+                  เข้าชม Heatmap สาธารณะ (ไม่ต้องใช้รหัสผ่าน) 🗺️
+                </button>
               </form>
 
               <div className="text-[9.5px] text-indigo-300/60 text-center flex items-center justify-center gap-1.5 font-mono pt-4 border-t border-white/5">
@@ -1206,7 +1218,7 @@ export default function App() {
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                     <span className="opacity-80">สิทธิ์เข้าถึง:</span>
                     <span className="text-white">
-                      {authenticatedRole === 'it_provincial' && '⚙️ เจ้าหน้าที่ IT สสจ.สตูล'}
+                      {authenticatedRole === 'it_provincial' && '⚙️ ผู้ดูแลระบบ Admin (IT สสจ.สตูล)'}
                       {authenticatedRole === 'executive' && '🛡️ ผู้บริหาร / คุมโรค'}
                       {authenticatedRole === 'hospital_staff' && '🏥 เจ้าหน้าที่ รพ./รพ.สต.'}
                     </span>
@@ -1222,11 +1234,19 @@ export default function App() {
                       </span>
                     )}
                     <button
+                      onClick={() => setViewingHeatmapPublicly(true)}
+                      className="p-1.5 px-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs border border-rose-500/30 text-[11px]"
+                      title="เปิดแผนภูมิความร้อนและขีดประดับสีสาธารณะ"
+                    >
+                      <MapPin className="w-3.5 h-3.5" />
+                      ดู Heatmap
+                    </button>
+                    <button
                       onClick={() => {
                         setAuthenticatedRole(null);
                         setAuthenticatedName(null);
                       }}
-                      className="p-1 px-2.5 hover:bg-white/10 text-indigo-200 hover:text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 border border-indigo-800/40 bg-indigo-900/20"
+                      className="p-1.5 px-2.5 hover:bg-white/10 text-indigo-200 hover:text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 border border-indigo-800/40 bg-indigo-900/20 text-[11px]"
                       title="กลับไปเลือกบทบาทความปลอดภัยใหม่"
                     >
                       ออกระบบ
@@ -1240,6 +1260,24 @@ export default function App() {
 
             {/* ส่วนแสดงแท็บเนื้อหาหลัก (Main Screen Workspace) */}
             <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+              {hasBackup && (
+                <div id="undo-restore-banner" className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-pulse">
+                  <div className="flex items-start gap-3">
+                    <span className="p-2 bg-amber-100 text-amber-800 rounded-xl font-bold shrink-0 text-xs">⚠️ ตรวจพบข้อมูลเดิม</span>
+                    <div>
+                      <h4 className="text-xs font-black text-amber-900">ตรวจพบข้อมูลสำรอง (ก่อนทำการย้อนค่าโรงงาน)</h4>
+                      <p className="text-[10px] text-amber-700 mt-0.5">ระบบได้จัดเก็บและสำรองข้อมูลทั้งหมดของคุณไว้โดยอัตโนมัติก่อนการคืนค่าโรงงาน คุณสามารถกู้คืนข้อมูลจังหวัดสตูลเดิมกลับมาได้ทันทีที่นี่!</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleUndoRestoreDefaults}
+                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-xl text-xs cursor-pointer transition-all shadow-sm self-start sm:self-auto shrink-0 active:scale-95"
+                  >
+                    กู้คืนข้อมูลดั้งเดิมกลับมาเลย (Undo Restore)
+                  </button>
+                </div>
+              )}
               
               {/* บอร์ดแสดงเบี้ยบทบาทปัจจุบัน */}
               <div className="bg-white p-4 rounded-2xl border border-indigo-50/50 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-indigo-50/20 to-white">
@@ -1253,7 +1291,7 @@ export default function App() {
                     <h2 className="text-xs font-black text-slate-900">
                       พอร์ทัลใช้งานบทบาท:{' '}
                       <span className="text-indigo-700 font-extrabold underline decoration-dashed decor-2 offset-2">
-                        {authenticatedRole === 'it_provincial' && 'เจ้าหน้าที่ IT ของ สสจ. (ผู้ดูแลระบบ)'}
+                        {authenticatedRole === 'it_provincial' && 'ผู้ดูแลระบบระบบ (Admin) - เจ้าหน้าที่ IT สสจ.สตูล'}
                         {authenticatedRole === 'hospital_staff' && 'เจ้าหน้าที่ IT รพ. / บันทึกคัดกรองผู้ป่วย'}
                         {authenticatedRole === 'executive' && 'ผู้บริหาร - เจ้าหน้าที่ควบคุมโรคของ สสจ.'}
                       </span>
@@ -1273,18 +1311,20 @@ export default function App() {
                 </div>
               </div>
 
-              {/* ส่วนแสดงสถิติประมวลและซิงก์ Google Sheets */}
-              <GoogleSheetsSync
-                token={googleToken}
-                onTokenChange={setGoogleToken}
-                appsScriptUrl={appsScriptUrl}
-                onAppsScriptUrlChange={setAppsScriptUrl}
-                syncLogs={syncLogs}
-                onClearLogs={() => setSyncLogs([])}
-                onOverwriteCloud={handleOverwriteCloud}
-                onSyncAccumulations={handleSyncAccumulations}
-                patientsCount={patients.length}
-              />
+              {/* ส่วนแสดงสถิติประมวลและซิงก์ Google Sheets - เฉพาะ IT สสจ.สตูล เท่านั้น */}
+              {authenticatedRole === 'it_provincial' && (
+                <GoogleSheetsSync
+                  token={googleToken}
+                  onTokenChange={setGoogleToken}
+                  appsScriptUrl={appsScriptUrl}
+                  onAppsScriptUrlChange={setAppsScriptUrl}
+                  syncLogs={syncLogs}
+                  onClearLogs={() => setSyncLogs([])}
+                  onOverwriteCloud={handleOverwriteCloud}
+                  onSyncAccumulations={handleSyncAccumulations}
+                  patientsCount={patients.length}
+                />
+              )}
 
               {/* ยัดแยก Component ตามยูนิตและโรล */}
               {authenticatedRole === 'executive' && (
@@ -1319,6 +1359,8 @@ export default function App() {
                   onClearPatients={handleClearPatients}
                   onRestoreDefaults={handleRestoreDefaults}
                   onDeletePatient={handleDeletePatient}
+                  hasBackup={hasBackup}
+                  onUndoRestore={handleUndoRestoreDefaults}
                 />
               )}
 

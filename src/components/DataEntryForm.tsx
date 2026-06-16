@@ -72,8 +72,10 @@ export default function DataEntryForm({
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!cid.trim() || cid.length < 5) {
-      setFeedbackMessage({ text: 'เลขบัตรประชาชนไม่ถูกต้อง ต้องกรอกหรือจำลอง ID ให้สมบูรณ์', type: 'error' });
+    const cleanCid = cid.replace(/\D/g, '');
+    if (cleanCid.length !== 13) {
+      setFeedbackMessage({ text: 'กรุณากรอกเลขบัตรประชาชนให้ถูกต้อง', type: 'error' });
+      alert('กรุณากรอกเลขบัตรประชาชนให้ถูกต้อง');
       return;
     }
 

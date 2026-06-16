@@ -38,8 +38,17 @@ export default function InteractiveMap({ areaStatuses, onSelectArea, selectedAre
           dot: 'bg-rose-500 animate-ping',
           text: 'text-rose-800',
           badge: 'bg-rose-500 text-white',
-          label: 'ระบาดรุนแรง',
+          label: 'ระบาดระดับสูง (แดง)',
           shadow: 'shadow-rose-100'
+        };
+      case 'orange':
+        return {
+          bg: 'bg-orange-50 hover:bg-orange-100 border-orange-300',
+          dot: 'bg-orange-500 animate-pulse',
+          text: 'text-orange-950',
+          badge: 'bg-orange-550 text-white',
+          label: 'เสี่ยงปานกลาง (ส้ม)',
+          shadow: 'shadow-orange-100'
         };
       case 'yellow':
         return {
@@ -47,7 +56,7 @@ export default function InteractiveMap({ areaStatuses, onSelectArea, selectedAre
           dot: 'bg-amber-500 animate-pulse',
           text: 'text-amber-800',
           badge: 'bg-amber-500 text-amber-955',
-          label: 'เฝ้าระวังภัย',
+          label: 'เฝ้าระวังภัย (เหลือง)',
           shadow: 'shadow-amber-100'
         };
       case 'green':
@@ -99,10 +108,12 @@ export default function InteractiveMap({ areaStatuses, onSelectArea, selectedAre
           {districts.map(district => {
             const districtCount = areaStatuses.filter(s => s.district === district).length;
             const hasOverbreak = areaStatuses.some(s => s.district === district && s.status === 'red');
+            const hasOrange = areaStatuses.some(s => s.district === district && s.status === 'orange');
             const hasAlert = areaStatuses.some(s => s.district === district && s.status === 'yellow');
             
             let statusDot = 'bg-emerald-400';
             if (hasOverbreak) statusDot = 'bg-rose-500 animate-pulse';
+            else if (hasOrange) statusDot = 'bg-orange-500 animate-pulse';
             else if (hasAlert) statusDot = 'bg-amber-400';
 
             return (
@@ -133,6 +144,7 @@ export default function InteractiveMap({ areaStatuses, onSelectArea, selectedAre
             // ตรวจสอบความเสี่ยงรวมของอำเภอนี้ เพื่อแสดงหัวข้อที่สวยงาม
             const districtStatuses = areaStatuses.filter(s => s.district === district);
             const redCount = districtStatuses.filter(s => s.status === 'red').length;
+            const orangeCount = districtStatuses.filter(s => s.status === 'orange').length;
             const yellowCount = districtStatuses.filter(s => s.status === 'yellow').length;
             
             let borderClass = 'border-slate-200/60 bg-white';
@@ -144,6 +156,14 @@ export default function InteractiveMap({ areaStatuses, onSelectArea, selectedAre
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
                   <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
                   พบคอนเฟิร์มระบาด {redCount} ตำบล
+                </span>
+              );
+            } else if (orangeCount > 0) {
+              borderClass = 'border-orange-200/70 bg-stone-50/40 ring-1 ring-orange-100';
+              headBadge = (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                  เสี่ยงปานกลาง {orangeCount} ตำบล
                 </span>
               );
             } else if (yellowCount > 0) {
@@ -267,9 +287,21 @@ export default function InteractiveMap({ areaStatuses, onSelectArea, selectedAre
                   <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
                 </div>
                 <div>
-                  <p className="font-bold text-rose-800">สีแดง: ควบคุมการระบาด</p>
+                  <p className="font-bold text-rose-800">สีแดง: ควบคุมการระบาดหนัก</p>
                   <p className="text-slate-400 text-[10px] mt-0.5">
-                    มีโรคระบาดสะสมใน 2 สัปดาห์ เกินขีดจำกัดสูงสุด (เช่น ไข้เลือดออก &gt;= 8, มือเท้าปาก &gt;= 6) มีแนวโน้มแพร่พันธุ์รวดเร็ว
+                    จำนวนเคสสะสมในพื้นที่ตั้งแต่ 6 รายขึ้นไป ถือเป็นจุดควบคุมเร่งรัดพิเศษร่วมป้องกัน
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5">
+                <div className="w-4 h-4 rounded-md bg-orange-100 border border-orange-300 shrink-0 mt-0.5 flex items-center justify-center">
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                </div>
+                <div>
+                  <p className="font-bold text-orange-900">สีส้ม: เฝ้าระวังเสี่ยงปานกลาง</p>
+                  <p className="text-slate-400 text-[10px] mt-0.5">
+                    จำนวนเคสสะสมในพื้นที่ 3-5 ราย เริ่มขยายตัวแผ่ความร้อนสะสม
                   </p>
                 </div>
               </div>
@@ -279,9 +311,9 @@ export default function InteractiveMap({ areaStatuses, onSelectArea, selectedAre
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                 </div>
                 <div>
-                  <p className="font-bold text-amber-800">สีเหลือง: พื้นที่เฝ้าระวังภัย</p>
+                  <p className="font-bold text-amber-800">สีเหลือง: เฝ้าระวังภัยทั่วไป</p>
                   <p className="text-slate-400 text-[10px] mt-0.5">
-                    จำนวนเคสเริ่มเพิ่มขึ้นต่อเนื่อง (เช่น ไข้เลือดออก 4-7 ราย) หรือมีเคสเริ่มเบี่ยงเบนจากแนวโน้มประวัติศาสตร์
+                    จำนวนเคสเริ่มแรก 1-2 ราย ตรวจตราเพื่อยับยั้งวงจรลุกลาม
                   </p>
                 </div>
               </div>
@@ -291,9 +323,9 @@ export default function InteractiveMap({ areaStatuses, onSelectArea, selectedAre
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 </div>
                 <div>
-                  <p className="font-bold text-emerald-800">สีเขียว: พื้นที่สถานการณ์ปกติ</p>
+                  <p className="font-bold text-emerald-800">สีเขียว: สภาพระมัดระวังปกติ</p>
                   <p className="text-slate-400 text-[10px] mt-0.5">
-                    จำนวนเคสน้อย ยู่ในเกณฑ์มาตรฐานควบคุมได้ ไม่มีสัญญาณสะสมของคลัสเตอร์ใหม่ในรอบครึ่งเดือน
+                    ไม่มีจำนวนผู้ติดเชื้อคดีเดี่ยวใดๆ (0 ราย) ข้อมูลเป็นศูนย์มีความปลอดภัยสูง
                   </p>
                 </div>
               </div>
@@ -351,11 +383,13 @@ export default function InteractiveMap({ areaStatuses, onSelectArea, selectedAre
                         <span className="text-indigo-200">ประเมินสถานะ:</span>
                         <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${
                           areaStat.status === 'red' ? 'bg-rose-500 text-white' :
+                          areaStat.status === 'orange' ? 'bg-orange-500 text-white' :
                           areaStat.status === 'yellow' ? 'bg-amber-400 text-slate-900' :
                           'bg-emerald-500 text-white'
                         }`}>
-                          {areaStat.status === 'red' ? 'ระบาดแดงอุ่นหนา' :
-                           areaStat.status === 'yellow' ? 'เฝ้าระวังเข้มงวด' : 'ปลอดภัยระดับปกติ'}
+                          {areaStat.status === 'red' ? 'แดง เสี่ยงสูง/วิกฤต' :
+                           areaStat.status === 'orange' ? 'ส้ม เสี่ยงปานกลาง' :
+                           areaStat.status === 'yellow' ? 'เหลือง เฝ้าระวังภัย' : 'เขียว ปลอดภัยปกติ'}
                         </span>
                       </div>
                       <p className="text-[10px] text-indigo-300/85 pt-1.5 italic">

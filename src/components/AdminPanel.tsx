@@ -19,6 +19,8 @@ interface AdminPanelProps {
   onClearPatients: () => void;
   onRestoreDefaults: () => void;
   onDeletePatient?: (id: string) => void;
+  hasBackup?: boolean;
+  onUndoRestore?: () => void;
 }
 
 export default function AdminPanel({
@@ -28,7 +30,9 @@ export default function AdminPanel({
   onUpdateCategoryThresholds,
   onClearPatients,
   onRestoreDefaults,
-  onDeletePatient
+  onDeletePatient,
+  hasBackup = false,
+  onUndoRestore
 }: AdminPanelProps) {
   // ควบคุมเซ็ตย่อยของแผงอักษร
   const [activeAdminSubTab, setActiveAdminSubTab] = useState<'rules' | 'db' | 'stats'>('rules');
@@ -165,6 +169,15 @@ export default function AdminPanel({
             </div>
 
             <div className="flex gap-2">
+              {hasBackup && onUndoRestore && (
+                <button
+                  onClick={onUndoRestore}
+                  className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold border border-indigo-200 rounded-lg text-xs cursor-pointer transition-colors animate-fade-in"
+                  title="กู้คืนข้อมูลชุดเดิมก่อนการกดพับสลับย้อนเกณฑ์ความเสี่ยงและการจายผู้ป่วย"
+                >
+                  กู้คืนข้อมูลก่อนรีเซ็ต (Undo)
+                </button>
+              )}
               <button
                 onClick={onRestoreDefaults}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border rounded-lg text-xs cursor-pointer transition-colors"

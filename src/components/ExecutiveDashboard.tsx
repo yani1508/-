@@ -10,7 +10,7 @@ import {
   Award, ShieldAlert, Calendar, LayoutDashboard, Truck, 
   CheckCircle, Hammer, Info, RotateCcw, Send, Plus, 
   PlusCircle, AlertCircle, ShoppingBag, Eye, User, FileText,
-  MapPin, Check
+  MapPin, Check, Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import InteractiveMap from './InteractiveMap';
@@ -54,8 +54,8 @@ export default function ExecutiveDashboard({
   const [senderName, setSenderName] = useState('นพ. ชินสิทธิ์ บริบาล');
   const [senderRole, setSenderRole] = useState('หัวหน้าฝ่ายสอบสวนโรคติดต่อ สสจ.สตูล');
 
-  // แท็บบอร์ดคำสั่งที่จัดส่งแล้ว
-  const [commandFilter, setCommandFilter] = useState<'ทั้งหมด' | 'pending' | 'received' | 'completed'>('ทั้งหมด');
+  // แท็บบอร์ดคำสั่งที่จัดส่งแล้ว (ค้นหาด้วยชื่อตำบล)
+  const [commandSearchQuery, setCommandSearchQuery] = useState('');
 
   // สำหรับการอัปเดตสถานะการกำกับดูแลโรคโดยผู้ใช้งานโดยตรงในแผงควบคุม
   const currentResource = selectedArea 
@@ -345,7 +345,7 @@ export default function ExecutiveDashboard({
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
 
           {/* ฝั่งสถิติอายุ และโรค สะสม */}
-          <div className="md:col-span-7 space-y-5">
+          <div className="md:col-span-12 space-y-5">
             <h4 className="text-xs font-bold text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
               <User className="w-4 h-4 text-indigo-500" />
               จำแนกปริมาณผู้ป่วยแยกตามกลุ่มอายุและสถิติสะสมโรค
@@ -423,117 +423,6 @@ export default function ExecutiveDashboard({
             </div>
           </div>
 
-          {/* ฝั่งอสังหา/การป้องกันการระบาด ทรัพยากรที่มี (เช่น มีทรายอะเบท หรือ พ่นหมอกควันไปแล้วหรือยัง) */}
-          <div className="md:col-span-5 bg-slate-50/50 rounded-2xl p-4 border border-slate-100 flex flex-col justify-between gap-4">
-            <div>
-              <h4 className="text-xs font-bold text-indigo-950 uppercase tracking-wider flex items-center gap-1.5 mb-1">
-                <Hammer className="w-4 h-4 text-emerald-600" />
-                สถานะสาธารณูปโภคและอุปสรรคการป้องกันในพื้นที่
-              </h4>
-              <p className="text-[10.5px] text-slate-400">
-                ประเมินเช็คเครื่องมือพ่นสยบและสารกำจัดและคติการสอนในสุขภาวะตำบล
-              </p>
-            </div>
-
-            {selectedArea && currentResource ? (
-              <div className="space-y-3 pt-1">
-                {/* 1. ทรายอะเบท */}
-                <div className="flex items-center justify-between text-xs py-1">
-                  <span className="text-slate-600 font-medium">มีทรายอะเบทควบคุมลูกน้ำ:</span>
-                  <div className="flex items-center gap-1">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      currentResource.abateSandApplied === 'yes' ? 'bg-emerald-100 text-emerald-800' :
-                      currentResource.abateSandApplied === 'partial' ? 'bg-amber-100 text-amber-800' :
-                      'bg-rose-100 text-rose-800'
-                    }`}>
-                      {currentResource.abateSandApplied === 'yes' ? 'เรียบร้อยครบ' :
-                       currentResource.abateSandApplied === 'partial' ? 'มีบางส่วน' : 'ยังไม่มีอุปกรณ์'}
-                    </span>
-                    <button
-                      onClick={() => onUpdateResource(selectedArea.subDistrict, selectedArea.district, {
-                        abateSandApplied: currentResource.abateSandApplied === 'yes' ? 'no' : currentResource.abateSandApplied === 'partial' ? 'yes' : 'partial'
-                      })}
-                      className="px-1.5 py-0.5 rounded border border-slate-200 text-[10px] hover:bg-white text-slate-500 cursor-pointer"
-                    >
-                      สลับ
-                    </button>
-                  </div>
-                </div>
-
-                {/* 2. พ่นหมอกควัน */}
-                <div className="flex items-center justify-between text-xs py-1 border-t border-slate-100/50">
-                  <span className="text-slate-600 font-medium">ฉีดพ่นหมอกควันฆ่ายุงลาย:</span>
-                  <div className="flex items-center gap-1">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      currentResource.foggingDone === 'yes' ? 'bg-emerald-100 text-emerald-800' :
-                      currentResource.foggingDone === 'partial' ? 'bg-amber-100 text-amber-800' :
-                      'bg-rose-100 text-rose-800'
-                    }`}>
-                      {currentResource.foggingDone === 'yes' ? 'ดำเนินการแล้ว' :
-                       currentResource.foggingDone === 'partial' ? 'กำลังพ่นยา' : 'ยังไม่พ่นเคมี'}
-                    </span>
-                    <button
-                      onClick={() => onUpdateResource(selectedArea.subDistrict, selectedArea.district, {
-                        foggingDone: currentResource.foggingDone === 'yes' ? 'no' : currentResource.foggingDone === 'partial' ? 'yes' : 'partial'
-                      })}
-                      className="px-1.5 py-0.5 rounded border border-slate-200 text-[10px] hover:bg-white text-slate-500 cursor-pointer"
-                    >
-                      สลับ
-                    </button>
-                  </div>
-                </div>
-
-                {/* 3. จัดสรรทีมแพทย์ปิตุภูมิ */}
-                <div className="flex items-center justify-between text-xs py-1 border-t border-slate-100/50">
-                  <span className="text-slate-600 font-medium">จัดตั้งเจ้าหน้าที่แพทย์เฝ้าระวัง:</span>
-                  <div className="flex items-center gap-1">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      currentResource.medicalStaffAssigned === 'yes' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                    }`}>
-                      {currentResource.medicalStaffAssigned === 'yes' ? 'ประจำการอยู่' : 'ขาดทีมซัปพอร์ต'}
-                    </span>
-                    <button
-                      onClick={() => onUpdateResource(selectedArea.subDistrict, selectedArea.district, {
-                        medicalStaffAssigned: currentResource.medicalStaffAssigned === 'yes' ? 'no' : 'yes'
-                      })}
-                      className="px-1.5 py-0.5 rounded border border-slate-200 text-[10px] hover:bg-white text-slate-500 cursor-pointer"
-                    >
-                      สลับ
-                    </button>
-                  </div>
-                </div>
-
-                {/* 4. ให้ความรู้ชุมชน */}
-                <div className="flex items-center justify-between text-xs py-1 border-t border-slate-100/50">
-                  <span className="text-slate-600 font-medium">อบรมสุขอนามัยในโรงเรียน:</span>
-                  <div className="flex items-center gap-1">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      currentResource.educationGiven === 'yes' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                    }`}>
-                      {currentResource.educationGiven === 'yes' ? 'เผยแพร่สมบูรณ์' : 'ไม่มีเวทีชี้แจง'}
-                    </span>
-                    <button
-                      onClick={() => onUpdateResource(selectedArea.subDistrict, selectedArea.district, {
-                        educationGiven: currentResource.educationGiven === 'yes' ? 'no' : 'yes'
-                      })}
-                      className="px-1.5 py-0.5 rounded border border-slate-200 text-[10px] hover:bg-white text-slate-500 cursor-pointer"
-                    >
-                      สลับ
-                    </button>
-                  </div>
-                </div>
-
-                <div className="text-[10px] text-slate-400 mt-2 text-right">
-                  อัปเดตล่าสุด: {currentResource.lastUpdated}
-                </div>
-              </div>
-            ) : (
-              <div className="flex-1 bg-white/60 border border-dashed border-slate-200 rounded-xl flex items-center justify-center p-6 text-center text-xs text-slate-400">
-                กรุณาคลิกเลือกตำบลในแผนที่ด้านบน เพื่อเรียกดูรายงานจัดการทรัพยากรชุมชนของตำบลนั้น
-              </div>
-            )}
-          </div>
-
         </div>
       </div>
 
@@ -550,94 +439,151 @@ export default function ExecutiveDashboard({
             </p>
           </div>
 
-          {/* ฟิลเตอร์สถานะสิทธิ์งานดร็อปดาวน์ */}
-          <div className="flex items-center gap-1.5 self-start">
-            {(['ทั้งหมด', 'pending', 'received', 'completed'] as const).map(f => (
+          {/* แถบค้นหาประวัติการสั่งการเป้าหมายตามตำบลแทนปุ่มสถานะเดิม */}
+          <div className="relative w-full sm:max-w-xs self-start">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="ค้นหาชื่อตำบลเพื่อดูประวัติ (เช่น กำแพง, พิมาน)..."
+              value={commandSearchQuery}
+              onChange={(e) => setCommandSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-8 py-1.5 text-xs bg-slate-50 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-xl outline-none transition-all font-sans"
+            />
+            {commandSearchQuery && (
               <button
-                key={f}
-                onClick={() => setCommandFilter(f)}
-                className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all cursor-pointer ${
-                  commandFilter === f 
-                    ? 'bg-slate-900 text-white' 
-                    : 'bg-slate-50 hover:bg-slate-100 text-slate-500'
-                }`}
+                onClick={() => setCommandSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+                title="ล้างคำค้นหา"
               >
-                {f === 'ทั้งหมด' ? 'ทั้งหมด' : 
-                 f === 'pending' ? 'รอสภารังวัด' : 
-                 f === 'received' ? 'ถึง รพ.สต.' : 'สบช. ชุมชนสำเร็จ'}
+                ✕
               </button>
-            ))}
+            )}
           </div>
         </div>
 
         {/* รายการแสดงการจัดส่ง */}
         {(() => {
           const filteredCommands = commands.filter(c => {
-            if (commandFilter === 'ทั้งหมด') return true;
-            return c.status === commandFilter;
+            if (!commandSearchQuery.trim()) return true;
+            return c.targetSubDistrict.toLowerCase().includes(commandSearchQuery.trim().toLowerCase());
           });
 
-          if (filteredCommands.length === 0) {
-            return (
-              <p className="text-xs text-slate-400 text-center py-6 border border-dashed border-slate-100 rounded-xl">
-                ไม่พบบัญชีคำสั่งการจัดสรรหมวดสิ่งพยุงในประเภทนี้
-              </p>
-            );
-          }
+          // วิเคราะห์นับจำนวนครั้งที่จัดส่งและรวมจำนวนสิ่งของสะสมเฉพาะที่ค้นหา
+          const totalDispatches = filteredCommands.length;
+          const aggregatedItems: { [name: string]: { quantity: number; unit: string } } = {};
+          
+          filteredCommands.forEach(cmd => {
+            cmd.items.forEach(item => {
+              if (item.quantity > 0) {
+                if (aggregatedItems[item.name]) {
+                  aggregatedItems[item.name].quantity += item.quantity;
+                } else {
+                  aggregatedItems[item.name] = { quantity: item.quantity, unit: item.unit };
+                }
+              }
+            });
+          });
 
           return (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredCommands.map(cmd => (
-                <div key={cmd.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3 flex flex-col justify-between">
-                  <div className="space-y-2">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase leading-none ${
-                          cmd.urgency === 'critical' ? 'bg-rose-500 text-white animate-pulse' :
-                          cmd.urgency === 'high' ? 'bg-amber-400 text-slate-950' : 'bg-slate-200 text-slate-700'
-                        }`}>
-                          {cmd.urgency === 'critical' ? 'ฉุกเฉินสูงสุด' :
-                           cmd.urgency === 'high' ? 'เร่งด่วนรัง' : 'ปกติเฝ้าระวัง'}
-                        </span>
-                        <h5 className="font-extrabold text-slate-900 text-xs mt-1 leading-snug">
-                          {cmd.commandTitle}
-                        </h5>
-                      </div>
-                      
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        cmd.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
-                        cmd.status === 'received' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-600'
-                      }`}>
-                        {cmd.status === 'completed' ? 'เสร็จสิ้นเรียบร้อย' :
-                         cmd.status === 'received' ? 'รพ.สต.รับแล้ว' : 'พิจารณาจวนตัว'}
+            <div className="space-y-4">
+              {/* เมื่อมีการค้นหาตำบล จะแสดงกล่องสรุปประวัติรวมว่ากี่ครั้งและอะไรบ้าง */}
+              {commandSearchQuery.trim() && (
+                <div className="bg-indigo-50/50 border border-indigo-100/60 rounded-xl p-4 space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-xs">
+                        สรุปการบันทึกจัดสรรสิ่งของ: ต.{commandSearchQuery.trim()}
+                      </h4>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        นับรอบคำสั่งการจัดส่งสิ่งสนับสนุนและกำลังพลในตำบลเป้าหมาย
+                      </p>
+                    </div>
+                    <div className="bg-indigo-600 text-white px-3 py-1 rounded-full text-[11px] font-bold self-start font-sans shadow-xs">
+                      สั่งการแล้วทั้งหมด <span className="font-mono text-xs">{totalDispatches}</span> ครั้ง
+                    </div>
+                  </div>
+
+                  {totalDispatches > 0 ? (
+                    <div className="space-y-1.5 border-t border-indigo-100/40 pt-2">
+                      <span className="text-[10px] text-indigo-950 font-bold block">
+                        สิ่งของสนับสนุนสะสมที่เคยสั่งจัดส่งไป:
                       </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.entries(aggregatedItems).map(([name, detail]) => (
+                          <span key={name} className="bg-white border border-indigo-150 text-slate-700 px-2.5 py-1 rounded-lg text-[10px] font-semibold flex items-center gap-1 shadow-2xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                            {name}: <span className="text-indigo-600 font-black">{detail.quantity}</span> {detail.unit}
+                          </span>
+                        ))}
+                      </div>
                     </div>
-
-                    <div className="text-[10px] text-slate-600 flex items-center gap-1 font-mono">
-                      <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                      หน่วยงานรพ.สต. {cmd.targetSubDistrict} (อ.{cmd.targetDistrict})
+                  ) : (
+                    <div className="text-[10.5px] text-slate-400 italic">
+                      ไม่พบประวัติการสั่งจัดสรรสิ่งของของตำบลนี้สะสมอยู่ในบอร์ดจัดสรร
                     </div>
-
-                    {/* สิ่งของที่สอยจัดไป */}
-                    <div className="flex flex-wrap gap-1 pt-1">
-                      {cmd.items.map(item => (
-                        <span key={item.name} className="bg-white px-2 py-0.5 border border-slate-200/50 rounded text-[9.5px] font-medium text-slate-700">
-                          {item.name}: {item.quantity} {item.unit}
-                        </span>
-                      ))}
-                    </div>
-
-                    <p className="text-[10.5px] text-slate-500 italic pt-1 font-sans">
-                      &ldquo; {cmd.instructions} &rdquo;
-                    </p>
-                  </div>
-
-                  <div className="border-t border-slate-200/50 pt-2 mt-3 flex items-center justify-between text-[9px] text-slate-400 font-mono">
-                    <span>ผู้สั่ง: {cmd.senderName} ({cmd.senderRole})</span>
-                    <span>{new Date(cmd.createdAt).toLocaleDateString('th-TH')}</span>
-                  </div>
+                  )}
                 </div>
-              ))}
+              )}
+
+              {filteredCommands.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-8 border border-dashed border-slate-100 rounded-xl bg-slate-50/35">
+                  ไม่พบบัญชีคำสั่งการจัดสรรในตำบลที่ค้นหานี้
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredCommands.map(cmd => (
+                    <div key={cmd.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3 flex flex-col justify-between shadow-2xs">
+                      <div className="space-y-2">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase leading-none ${
+                              cmd.urgency === 'critical' ? 'bg-rose-500 text-white animate-pulse' :
+                              cmd.urgency === 'high' ? 'bg-amber-400 text-slate-950' : 'bg-slate-200 text-slate-700'
+                            }`}>
+                              {cmd.urgency === 'critical' ? 'ฉุกเฉินสูงสุด' :
+                               cmd.urgency === 'high' ? 'เร่งด่วนรัง' : 'ปกติเฝ้าระวัง'}
+                            </span>
+                            <h5 className="font-extrabold text-slate-900 text-xs mt-1 leading-snug">
+                              {cmd.commandTitle}
+                            </h5>
+                          </div>
+                          
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            cmd.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
+                            cmd.status === 'received' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-600'
+                          }`}>
+                            {cmd.status === 'completed' ? 'เสร็จสิ้นเรียบร้อย' :
+                             cmd.status === 'received' ? 'รพ.สต.รับแล้ว' : 'พิจารณาจวนตัว'}
+                          </span>
+                        </div>
+
+                        <div className="text-[10px] text-slate-600 flex items-center gap-1 font-mono">
+                          <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                          หน่วยงานรพ.สต. {cmd.targetSubDistrict} (อ.{cmd.targetDistrict})
+                        </div>
+
+                        {/* สิ่งของที่สอยจัดไป */}
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {cmd.items.map(item => (
+                            <span key={item.name} className="bg-white px-2 py-0.5 border border-slate-200/50 rounded text-[9.5px] font-medium text-slate-700">
+                              {item.name}: {item.quantity} {item.unit}
+                            </span>
+                          ))}
+                        </div>
+
+                        <p className="text-[10.5px] text-slate-500 italic pt-1 font-sans">
+                          &ldquo; {cmd.instructions} &rdquo;
+                        </p>
+                      </div>
+
+                      <div className="border-t border-slate-200/50 pt-2 mt-3 flex items-center justify-between text-[9px] text-slate-400 font-mono">
+                        <span>ผู้สั่ง: {cmd.senderName} ({cmd.senderRole})</span>
+                        <span>{new Date(cmd.createdAt).toLocaleDateString('th-TH')}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })()}
