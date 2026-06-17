@@ -13,7 +13,18 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const targetUrl = req.query.url as string;
+  let targetUrl = req.query?.url as string;
+
+  if (!targetUrl && req.url) {
+    try {
+      // Robust fallback extraction from the full req.url string (e.g. /api/proxy?url=https...)
+      const fullUrl = new URL(req.url, 'http://localhost');
+      targetUrl = fullUrl.searchParams.get('url') || '';
+    } catch (e) {
+      console.error("[Vercel Proxy] Failed to parse query from req.url:", e);
+    }
+  }
+
   if (!targetUrl) {
     return res.status(400).json({ status: "error", error: "Missing url parameter" });
   }
