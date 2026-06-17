@@ -78,16 +78,6 @@ export default function HeatmapView({ onBackToLogin, categories = DISEASE_CATEGO
       setSelectedAreaKey(null);
     }
 
-    // หากใช้ไอดี Spreadsheet ตัวอย่างเริ่มต้น ให้ใช้รายการคนไข้ของระบบ (สอดคล้องกับ Sheet5 และโครงร่างในหน้าควบคุมหลัก)
-    if (targetId === '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE') {
-      const saved = localStorage.getItem('satun_patients');
-      const localPatients = saved ? JSON.parse(saved) : INITIAL_PATIENTS;
-      setPatients(localPatients);
-      setLastUpdated(new Date());
-      setIsLoading(false);
-      return;
-    }
-
     const exportUrl = `https://docs.google.com/spreadsheets/d/${targetId}/export?format=csv&gid=${sheetGid}`;
     const proxyUrl = `/api/proxy?url=${encodeURIComponent(exportUrl)}`;
 
@@ -181,7 +171,15 @@ export default function HeatmapView({ onBackToLogin, categories = DISEASE_CATEGO
       setLastUpdated(new Date());
     } catch (err: any) {
       console.error('Heatmap Data Fetch Error:', err);
-      setErrorMsg(err.message || 'เกิดข้อผิดพลาดในการดึงข้อมูลจาก Google Sheets');
+      if (targetId === '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE') {
+        // Fallback to local storage for the default template sheet if there's an error/offline
+        const saved = localStorage.getItem('satun_patients');
+        const localPatients = saved ? JSON.parse(saved) : INITIAL_PATIENTS;
+        setPatients(localPatients);
+        setLastUpdated(new Date());
+      } else {
+        setErrorMsg(err.message || 'เกิดข้อผิดพลาดในการดึงข้อมูลจาก Google Sheets');
+      }
     } finally {
       setIsLoading(false);
     }

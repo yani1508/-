@@ -13,16 +13,36 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  let targetUrl = req.query?.url as string;
+  let targetUrl = '';
 
-  if (!targetUrl && req.url) {
+  if (req.url) {
     try {
-      // Robust fallback extraction from the full req.url string (e.g. /api/proxy?url=https...)
-      const fullUrl = new URL(req.url, 'http://localhost');
-      targetUrl = fullUrl.searchParams.get('url') || '';
+      // Find 'url=' in the request URL
+      const urlIndex = req.url.indexOf('url=');
+      if (urlIndex !== -1) {
+        // Extract everything after 'url='
+        const rawUrl = req.url.substring(urlIndex + 4);
+        // Decode it to get the pristine target URL
+        targetUrl = decodeURIComponent(rawUrl);
+      }
     } catch (e) {
-      console.error("[Vercel Proxy] Failed to parse query from req.url:", e);
+      console.error("[Vercel Proxy] Failed to extract from substring:", e);
     }
+  }
+
+  // Backup fallback using standard URL parser
+  if (!targetUrl) {
+    try {
+      const parsedUrl = new URL(req.url || '', 'http://localhost');
+      targetUrl = parsedUrl.searchParams.get('url') || '';
+    } catch (e) {
+      console.error("[Vercel Proxy] URL parsing fallback failed:", e);
+    }
+  }
+
+  // Double backup check query
+  if (!targetUrl && req.query?.url) {
+    targetUrl = req.query.url;
   }
 
   if (!targetUrl) {
