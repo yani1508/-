@@ -21,7 +21,8 @@ export default async function handler(req: any, res: any) {
       const urlIndicator = req.url.includes('?url=') ? '?url=' : (req.url.includes('&url=') ? '&url=' : '');
       if (urlIndicator) {
         const index = req.url.indexOf(urlIndicator);
-        targetUrl = decodeURIComponent(req.url.substring(index + urlIndicator.length));
+        const rawTarget = req.url.substring(index + urlIndicator.length);
+        targetUrl = decodeURIComponent(rawTarget);
       }
     } catch (e) {
       console.error("[Vercel Proxy] Error parsing URL manually:", e);
@@ -44,6 +45,28 @@ export default async function handler(req: any, res: any) {
   // Double backup check query (Vercel automatic parse helper)
   if (!targetUrl && req.query?.url) {
     targetUrl = req.query.url;
+  }
+
+  // Bulletproof reconstruction check: If Vercel router splitted other parameters from targetUrl, reconstruct them
+  if (targetUrl && req.query) {
+    try {
+      const queryKeys = Object.keys(req.query);
+      if (queryKeys.length > 1) {
+        const urlObj = new URL(targetUrl);
+        let updated = false;
+        queryKeys.forEach(key => {
+          if (key !== 'url' && !urlObj.searchParams.has(key)) {
+            urlObj.searchParams.set(key, req.query[key]);
+            updated = true;
+          }
+        });
+        if (updated) {
+          targetUrl = urlObj.toString();
+        }
+      }
+    } catch (e) {
+      console.error("[Vercel Proxy] Error during query reconstruction fallback:", e);
+    }
   }
 
   if (!targetUrl) {
