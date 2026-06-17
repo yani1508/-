@@ -36,17 +36,8 @@ const safeParseJson = (text: string): any => {
 };
 
 export default function App() {
-  // --- ระบบบันทึกสะสมและซิงก์ในเครื่องเพื่อประสิทธิภาพสูงสุด (Local Storage Persistence) ---
-  const [patients, setPatients] = useState<Patient[]>(() => {
-    const isNewVersion = localStorage.getItem('satun_patients_version_v12');
-    if (!isNewVersion) {
-      localStorage.setItem('satun_patients_version_v12', 'true');
-      localStorage.setItem('satun_patients', JSON.stringify(INITIAL_PATIENTS));
-      return INITIAL_PATIENTS;
-    }
-    const saved = localStorage.getItem('satun_patients');
-    return saved ? JSON.parse(saved) : INITIAL_PATIENTS;
-  });
+  // --- ระบบบันทึกสะสมและซิงก์ตรงกับ Google Sheets คลาวด์เพื่อความเที่ยงตรงเรียลไทม์ข้ามเครื่อง ---
+  const [patients, setPatients] = useState<Patient[]>(INITIAL_PATIENTS);
 
   const [categories, setCategories] = useState<DiseaseCategory[]>(() => {
     const saved = localStorage.getItem('satun_categories');
@@ -654,7 +645,7 @@ export default function App() {
           });
         }
 
-        if (loadedPatients.length > 0 && active) {
+        if (active) {
           // เปรียบเทียบผู้ป่วยเพื่อหลีกเลี่ยงการ re-render วนรอบไม่สิ้นสุด
           setPatients(prev => {
             const currentKeys = JSON.stringify(prev.map(p => `${p.cidEncrypted}-${p.diseaseCode}-${p.onsetEmanationDate}`));
@@ -687,10 +678,8 @@ export default function App() {
   const [showNotificationToast, setShowNotificationToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
-  // ซิงก์ข้อมูลเมื่อมีการอัปเดตสถานะผู้ป่วย
+  // ประมวลผลสถานะพื้นที่และข้อความแจ้งภัยเมื่อมีการอัปเดตข้อมูลผู้ป่วยจาก Cloud Google Sheets
   useEffect(() => {
-    localStorage.setItem('satun_patients', JSON.stringify(patients));
-    
     // ตรวจสอบและประมวลผลความเสี่ยงเฉลี่ยและแนวโน้มแบบทันท่วงที
     const computedStatuses = recalculateAreaStatuses(patients, categories);
     const computedAlerts = generatePredictiveAlerts(patients, categories);
@@ -1026,7 +1015,6 @@ export default function App() {
       console.error('ไม่สามารถจำล็อกไฟล์กู้ฐานข้อมูลอัตโนมัติได้:', e);
     }
 
-    localStorage.removeItem('satun_patients');
     localStorage.removeItem('satun_categories');
     localStorage.removeItem('satun_resources');
     localStorage.removeItem('satun_commands');
@@ -1047,7 +1035,6 @@ export default function App() {
     if (backupPatients || backupCategories || backupResources || backupCommands) {
       if (backupPatients) {
         setPatients(JSON.parse(backupPatients));
-        localStorage.setItem('satun_patients', backupPatients);
       }
       if (backupCategories) {
         setCategories(JSON.parse(backupCategories));

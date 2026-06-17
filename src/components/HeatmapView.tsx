@@ -47,10 +47,7 @@ export default function HeatmapView({ onBackToLogin, categories = DISEASE_CATEGO
     return localStorage.getItem('google_heatmap_sheet_id') || '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE';
   });
   
-  const [patients, setPatients] = useState<Patient[]>(() => {
-    const saved = localStorage.getItem('satun_patients');
-    return saved ? JSON.parse(saved) : INITIAL_PATIENTS;
-  });
+  const [patients, setPatients] = useState<Patient[]>(INITIAL_PATIENTS);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -172,10 +169,8 @@ export default function HeatmapView({ onBackToLogin, categories = DISEASE_CATEGO
     } catch (err: any) {
       console.error('Heatmap Data Fetch Error:', err);
       if (targetId === '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE') {
-        // Fallback to local storage for the default template sheet if there's an error/offline
-        const saved = localStorage.getItem('satun_patients');
-        const localPatients = saved ? JSON.parse(saved) : INITIAL_PATIENTS;
-        setPatients(localPatients);
+        // Fallback directly to initial default patients if there's an error/offline
+        setPatients(INITIAL_PATIENTS);
         setLastUpdated(new Date());
       } else {
         setErrorMsg(err.message || 'เกิดข้อผิดพลาดในการดึงข้อมูลจาก Google Sheets');
