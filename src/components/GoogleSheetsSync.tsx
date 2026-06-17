@@ -536,18 +536,57 @@ function doPost(e) {
             </form>
 
             {appsScriptUrl ? (
-              <div className="p-3 rounded-xl border border-emerald-150 bg-emerald-50/40 flex items-center justify-between">
-                <div className="flex items-center gap-2 text-emerald-800 font-semibold text-[11px]">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>ระบบสตูล พอร์ทัล เชื่อมโยงเข้ากับ Google Apps Script Web App ของท่านแล้ว</span>
+              <div className="space-y-2">
+                <div className="p-3 rounded-xl border border-emerald-150 bg-emerald-50/40 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-emerald-800 font-semibold text-[11px]">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>ระบบสตูล พอร์ทัล เชื่อมโยงเข้ากับ Google Apps Script Web App ของท่านแล้ว</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleDisconnectScript}
+                    className="text-[10px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 p-1 px-2.5 rounded-lg transition-all"
+                  >
+                    ถอนการเชื่อมต่อ
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleDisconnectScript}
-                  className="text-[10px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 p-1 px-2.5 rounded-lg transition-all"
-                >
-                  ถอนการเชื่อมต่อ
-                </button>
+
+                <div className="p-3.5 rounded-xl border border-blue-100 bg-blue-50/30 gap-3 md:flex items-center shadow-3xs text-left" id="mobile-share-link-helper">
+                  <div className="flex-1 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-blue-900 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
+                        ⚡️ สแกน / แชร์ลิงก์ เชื่อมระบบกับโทรศัพท์มือถือด่วน!
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-blue-800/80 leading-relaxed">
+                      เนื่องจากความจำข้อมูลเครื่อง (localStorage) จะแยกกันตามเครื่องและเว็บเบราว์เซอร์ เพื่อให้โทรศัพท์มือถือเข้าถึง Google Sheets ของคุณได้ทันทีโดยไม่ต้องไปกรอกลิงก์ใหม่ยาว ๆ ให้ใช้กล้องโทรศัพท์สแกน QR Code นี้ หรือคลิ๊กปุ่มด้านล่างเพื่อแชร์ลิ้งก์ด่วนได้เลย!
+                    </p>
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const shareUrl = `${window.location.origin}${window.location.pathname}?scriptUrl=${encodeURIComponent(appsScriptUrl)}`;
+                          navigator.clipboard.writeText(shareUrl);
+                          alert("✓ คัดลอกลิงก์เรียบร้อย! ส่งสิทธิ์ต่อข้ามเครื่องผ่าน ไลน์ (LINE) หรืออีเมล เมื่อเปิดในโทรศัพท์มือถือ ระบบจะติดตั้งจำลองสิทธิ์การเขียนเชื่อมแผ่นงาน Google Sheets ให้เหมาะสมทันทีโดยไม่ต้องพิมพ์เอง!");
+                        }}
+                        className="text-[10px] font-bold text-blue-700 hover:text-blue-800 hover:bg-blue-100/50 bg-white border border-blue-200 p-1.5 px-3 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <Copy className="w-3 h-3" />
+                        คัดลอกลิงก์แชร์สิทธิ์
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-2 md:mt-0 flex flex-col items-center justify-center bg-white p-1.5 rounded-xl border border-blue-200 shadow-3xs shrink-0 self-center">
+                    <img 
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`${window.location.origin}${window.location.pathname}?scriptUrl=${encodeURIComponent(appsScriptUrl)}`)}`} 
+                      alt="QR Code สำหรับมือถือ" 
+                      className="w-[85px] h-[85px]"
+                      referrerPolicy="no-referrer"
+                    />
+                    <span className="text-[8.5px] font-bold text-blue-700 mt-1">สแกนเปิดบนมือถือ</span>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="p-3 text-[10px] bg-slate-50 text-slate-500 italic rounded-lg">

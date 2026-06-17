@@ -140,6 +140,32 @@ export default function App() {
   });
   const [syncLogs, setSyncLogs] = useState<{ id: string; time: string; type: 'success' | 'error' | 'info'; msg: string }[]>([]);
 
+  // ตรวจจับตัวแปร Apps Script URL จาก Query Params เพื่อติดตั้งรวดเร็วข้ามอุปกรณ์
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const paramUrl = params.get('scriptUrl') || params.get('google_apps_script_url');
+      if (paramUrl) {
+        const decodedUrl = decodeURIComponent(paramUrl);
+        localStorage.setItem('google_apps_script_url', decodedUrl);
+        setAppsScriptUrl(decodedUrl);
+        
+        // ลบค่าออกจากแถบ URL เพื่อความสวยงามสะอาดตา
+        params.delete('scriptUrl');
+        params.delete('google_apps_script_url');
+        const newSearch = params.toString();
+        const newPath = window.location.pathname + (newSearch ? '?' + newSearch : '') + window.location.hash;
+        window.history.replaceState(null, '', newPath);
+        
+        setTimeout(() => {
+          triggerNotification('✓ นำเข้าสิทธิ์การเขียนเชื่อมแผง Google Sheets สำเร็จแล้วบนมือถือเครื่องนี้!');
+        }, 1000);
+      }
+    } catch (e) {
+      console.error('Error auto-importing apps script url:', e);
+    }
+  }, []);
+
   // ตรวจจับ hash สำเร็จลุล่วงจาก OAuth Google Sheets
   useEffect(() => {
     const hash = window.location.hash;
