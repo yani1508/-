@@ -568,6 +568,119 @@ export default function App() {
     fetchLiveCredentials();
   }, [appsScriptUrl]);
 
+  // ดึงข้อมูลผู้ป่วยเรียลไทม์จากระบบประสานงานคลาวด์ Google Sheets เพื่อแชร์เรียลไทม์กับ Heatmap และผู้บริหาร
+  useEffect(() => {
+    let active = true;
+    const fetchLivePatientsSync = async () => {
+      const spreadsheetId = localStorage.getItem('google_heatmap_sheet_id') || '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE';
+      if (!spreadsheetId) return;
+
+      const exportUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=1433180548`;
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(exportUrl)}`;
+
+      try {
+        const response = await fetch(proxyUrl);
+        if (!response.ok || !active) return;
+
+        const text = await response.text();
+        if (text.includes('<!DOCTYPE html>') || text.includes('ServiceLogin') || text.includes('login') || text.includes('DOCTYPE html')) {
+          return;
+        }
+
+        const lines = text.split('\n');
+        const loadedPatients: Patient[] = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+
+          const columns = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+          if (columns.length < 3) continue;
+
+          const rawCid = columns[0] || '';
+          const rawAddress = columns[2] || '';
+          const rawOnset = columns[3] || '';
+          let rawDisease = columns[1] || '';
+
+          let dCode = 'A90';
+          let dName = 'ไข้เลือดออก';
+          if (rawDisease.includes(' - ')) {
+            const split = rawDisease.split(' - ');
+            dCode = split[0].trim();
+            dName = split[1].trim();
+          } else if (rawDisease.includes(' ')) {
+            const split = rawDisease.split(' ');
+            dCode = split[0].trim();
+            dName = split[1].trim();
+          } else {
+            dCode = rawDisease.trim();
+            const matched = categories.find(c => c.code.toUpperCase() === dCode.toUpperCase());
+            if (matched) dName = matched.name;
+          }
+
+          let detectedDistrict = 'เมืองสตูล';
+          let detectedSubDistrict = 'พิมาน';
+          let foundGeog = false;
+
+          for (const dist of Object.keys(SATUN_GEOGRAPHY)) {
+            for (const sub of SATUN_GEOGRAPHY[dist]) {
+              if (rawAddress.includes(sub)) {
+                detectedSubDistrict = sub;
+                detectedDistrict = dist;
+                foundGeog = true;
+                break;
+              }
+            }
+            if (foundGeog) break;
+          }
+
+          let villageClean = rawAddress;
+          if (villageClean.includes('ต.')) villageClean = villageClean.split('ต.')[0];
+          if (villageClean.includes('ตำบล')) villageClean = villageClean.split('ตำบล')[0];
+          villageClean = villageClean.replace(/[,;]+$/, '').trim() || 'หมู่ 1';
+
+          loadedPatients.push({
+            id: `live-pt-${i}`,
+            cidEncrypted: rawCid || 'X-XXXX-XXXXX-XX-X',
+            diseaseCode: dCode,
+            diseaseName: dName,
+            village: villageClean,
+            subDistrict: detectedSubDistrict,
+            district: detectedDistrict,
+            onsetEmanationDate: rawOnset || new Date().toISOString().split('T')[0],
+            reportedDate: rawOnset || new Date().toISOString().split('T')[0],
+            age: parseInt(columns[4]) || 25,
+            gender: columns[5] === 'หญิง' ? 'หญิง' : 'ชาย'
+          });
+        }
+
+        if (loadedPatients.length > 0 && active) {
+          // เปรียบเทียบผู้ป่วยเพื่อหลีกเลี่ยงการ re-render วนรอบไม่สิ้นสุด
+          setPatients(prev => {
+            const currentKeys = JSON.stringify(prev.map(p => `${p.cidEncrypted}-${p.diseaseCode}-${p.onsetEmanationDate}`));
+            const loadedKeys = JSON.stringify(loadedPatients.map(p => `${p.cidEncrypted}-${p.diseaseCode}-${p.onsetEmanationDate}`));
+            if (currentKeys !== loadedKeys) {
+              return loadedPatients;
+            }
+            return prev;
+          });
+        }
+      } catch (e) {
+        console.warn("Auto sync live patients from Sheet5 failed:", e);
+      }
+    };
+
+    fetchLivePatientsSync();
+
+    // ดึงข้อมูลสดเมื่อมีการเปลี่ยนแปลงข้อมูลบน Cloud ทุก 3 วินาทีตามที่แอดมินหรือระบบอื่นบันทึกไว้
+    const intervalId = setInterval(fetchLivePatientsSync, 3000);
+
+    return () => {
+      active = false;
+      clearInterval(intervalId);
+    };
+  }, [categories]);
+
   // สำหรับการแจ้งเตือน Real-time ที่จะประเมินผลคำนวณแบบสัปดาห์ต่อสัปดาห์
   const [areaStatuses, setAreaStatuses] = useState<AreaStatus[]>([]);
   const [alerts, setAlerts] = useState<PredictiveAlert[]>([]);

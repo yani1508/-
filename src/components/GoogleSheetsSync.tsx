@@ -287,15 +287,18 @@ function doGet(e) {
       };
       
       return ContentService.createTextOutput(JSON.stringify(response))
-        .setMimeType(ContentService.MimeType.JSON);
+        .setMimeType(ContentService.MimeType.JSON)
+        .addHeader('Access-Control-Allow-Origin', '*');
     } catch (err) {
       return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
-        .setMimeType(ContentService.MimeType.JSON);
+        .setMimeType(ContentService.MimeType.JSON)
+        .addHeader('Access-Control-Allow-Origin', '*');
     }
   }
   
   return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "ไม่พบคำสั่งระบุ" }))
-    .setMimeType(ContentService.MimeType.JSON);
+    .setMimeType(ContentService.MimeType.JSON)
+    .addHeader('Access-Control-Allow-Origin', '*');
 }
 
 function doPost(e) {
@@ -339,10 +342,12 @@ function doPost(e) {
         }
       }
       return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "ล้างแผ่นงานเดิมสำเร็จ!" }))
-        .setMimeType(ContentService.MimeType.JSON);
+        .setMimeType(ContentService.MimeType.JSON)
+        .addHeader('Access-Control-Allow-Origin', '*');
     } catch (err) {
       return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
-        .setMimeType(ContentService.MimeType.JSON);
+        .setMimeType(ContentService.MimeType.JSON)
+        .addHeader('Access-Control-Allow-Origin', '*');
     }
   }
   
@@ -379,18 +384,22 @@ function doPost(e) {
           sheet.appendRow(rowValues);
         }
         return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "บันทึกเรียบร้อย!" }))
-          .setMimeType(ContentService.MimeType.JSON);
+          .setMimeType(ContentService.MimeType.JSON)
+          .addHeader('Access-Control-Allow-Origin', '*');
       }
       return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "ไม่มีข้อมูลส่งมา" }))
-        .setMimeType(ContentService.MimeType.JSON);
+        .setMimeType(ContentService.MimeType.JSON)
+        .addHeader('Access-Control-Allow-Origin', '*');
     } catch (err) {
       return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
-        .setMimeType(ContentService.MimeType.JSON);
+        .setMimeType(ContentService.MimeType.JSON)
+        .addHeader('Access-Control-Allow-Origin', '*');
     }
   }
   
   return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "ไม่พบข้อมูลที่ต้องการบันทึก" }))
-    .setMimeType(ContentService.MimeType.JSON);
+    .setMimeType(ContentService.MimeType.JSON)
+    .addHeader('Access-Control-Allow-Origin', '*');
 }`;
 
   const handleCopyScript = () => {
