@@ -17,36 +17,45 @@ export default async function handler(req: any, res: any) {
 
   if (req.url) {
     try {
-      // Find 'url=' in the request URL
-      const urlIndex = req.url.indexOf('url=');
-      if (urlIndex !== -1) {
-        // Extract everything after 'url='
-        const rawUrl = req.url.substring(urlIndex + 4);
-        // Decode it to get the pristine target URL
-        targetUrl = decodeURIComponent(rawUrl);
+      // Find '?url=' or '&url=' in raw req.url
+      const urlIndicator = req.url.includes('?url=') ? '?url=' : (req.url.includes('&url=') ? '&url=' : '');
+      if (urlIndicator) {
+        const index = req.url.indexOf(urlIndicator);
+        targetUrl = decodeURIComponent(req.url.substring(index + urlIndicator.length));
       }
     } catch (e) {
-      console.error("[Vercel Proxy] Failed to extract from substring:", e);
+      console.error("[Vercel Proxy] Error parsing URL manually:", e);
     }
   }
 
   // Backup fallback using standard URL parser
-  if (!targetUrl) {
+  if (!targetUrl && req.url) {
     try {
-      const parsedUrl = new URL(req.url || '', 'http://localhost');
-      targetUrl = parsedUrl.searchParams.get('url') || '';
+      const parsedUrl = new URL(req.url, 'http://localhost');
+      const urlParam = parsedUrl.searchParams.get('url');
+      if (urlParam) {
+        targetUrl = urlParam;
+      }
     } catch (e) {
       console.error("[Vercel Proxy] URL parsing fallback failed:", e);
     }
   }
 
-  // Double backup check query
+  // Double backup check query (Vercel automatic parse helper)
   if (!targetUrl && req.query?.url) {
     targetUrl = req.query.url;
   }
 
   if (!targetUrl) {
-    return res.status(400).json({ status: "error", error: "Missing url parameter" });
+    return res.status(400).json({ 
+      status: "error", 
+      error: "Missing url parameter", 
+      debug: {
+        url: req.url || null,
+        query: req.query || null,
+        method: req.method || null
+      }
+    });
   }
 
   try {
