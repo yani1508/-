@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Link2, AlertCircle, CheckCircle2, ChevronDown, ChevronUp, RefreshCw, LogIn, LogOut, Key, Copy, Check } from 'lucide-react';
+import { safeLocalStorage } from '../utils/localStorage';
 
 const safeParseJson = (text: string): any => {
   const trimmed = text.trim();
@@ -36,7 +37,7 @@ export function GoogleSheetsSync({
 }: GoogleSheetsSyncProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [manualToken, setManualToken] = useState('');
-  const [clientId, setClientId] = useState(() => localStorage.getItem('custom_google_client_id') || '');
+  const [clientId, setClientId] = useState(() => safeLocalStorage.getItem('custom_google_client_id') || '');
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<{ status: 'idle' | 'success' | 'error'; message: string }>({ status: 'idle', message: '' });
   const [showConfigOptions, setShowConfigOptions] = useState(false);
@@ -55,7 +56,7 @@ export function GoogleSheetsSync({
 
   // Handle Google Sheets Connection via Redirect
   const handleGoogleRedirectLogin = () => {
-    const activeClientId = envClientId || clientId || localStorage.getItem('custom_google_client_id');
+    const activeClientId = envClientId || clientId || safeLocalStorage.getItem('custom_google_client_id');
     if (!activeClientId) {
       alert('กรุณาระบุ Google Client ID ในส่วนการตั้งค่าขั้นสูงด้านล่าง หรือตั้งค่าตัวแปรระบบ VITE_GOOGLE_CLIENT_ID คีย์ก่อน!');
       setShowConfigOptions(true);
@@ -63,7 +64,7 @@ export function GoogleSheetsSync({
     }
 
     if (clientId) {
-      localStorage.setItem('custom_google_client_id', clientId);
+      safeLocalStorage.setItem('custom_google_client_id', clientId);
     }
 
     const redirectUri = window.location.origin + '/';
@@ -80,7 +81,7 @@ export function GoogleSheetsSync({
 
   // Handle Google Connections via Popup
   const handleGooglePopupLogin = () => {
-    const activeClientId = envClientId || clientId || localStorage.getItem('custom_google_client_id');
+    const activeClientId = envClientId || clientId || safeLocalStorage.getItem('custom_google_client_id');
     if (!activeClientId) {
       alert('กรุณาระบุ Google Client ID ในส่วนการตั้งค่าขั้นสูงด้านล่าง หรือตั้งค่าตัวแปรระบบ VITE_GOOGLE_CLIENT_ID คีย์ก่อน!');
       setShowConfigOptions(true);
@@ -88,7 +89,7 @@ export function GoogleSheetsSync({
     }
 
     if (clientId) {
-      localStorage.setItem('custom_google_client_id', clientId);
+      safeLocalStorage.setItem('custom_google_client_id', clientId);
     }
 
     const redirectUri = window.location.origin + '/';
@@ -120,7 +121,7 @@ export function GoogleSheetsSync({
           const params = new URLSearchParams(hash.substring(1));
           const accessToken = params.get('access_token');
           if (accessToken) {
-            localStorage.setItem('google_sheets_access_token', accessToken);
+            safeLocalStorage.setItem('google_sheets_access_token', accessToken);
             onTokenChange(accessToken);
             clearInterval(interval);
             popup.close();
@@ -135,7 +136,7 @@ export function GoogleSheetsSync({
   const handleManualTokenSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualToken.trim()) return;
-    localStorage.setItem('google_sheets_access_token', manualToken.trim());
+    safeLocalStorage.setItem('google_sheets_access_token', manualToken.trim());
     onTokenChange(manualToken.trim());
     setManualToken('');
     setTestResult({ status: 'idle', message: '' });
@@ -145,10 +146,10 @@ export function GoogleSheetsSync({
     e.preventDefault();
     const cleanUrl = scriptUrlInput.trim();
     if (cleanUrl) {
-      localStorage.setItem('google_apps_script_url', cleanUrl);
+      safeLocalStorage.setItem('google_apps_script_url', cleanUrl);
       onAppsScriptUrlChange(cleanUrl);
     } else {
-      localStorage.removeItem('google_apps_script_url');
+      safeLocalStorage.removeItem('google_apps_script_url');
       onAppsScriptUrlChange(null);
     }
     alert('บันทึกและเชื่อมโยง Google Apps Script ยึดหลักสำเร็จเรียบร้อย!');
@@ -229,7 +230,7 @@ export function GoogleSheetsSync({
 
   const handleDisconnect = () => {
     if (confirm('คุณต้องการยกเลิกการซิงก์ Google Sheets หรือไม่? ข้อมูลจะยังบันทึกในอุปกรณ์นี้ แต่ออฟไลน์จากคลาวด์')) {
-      localStorage.removeItem('google_sheets_access_token');
+      safeLocalStorage.removeItem('google_sheets_access_token');
       onTokenChange(null);
       setTestResult({ status: 'idle', message: '' });
     }
@@ -237,7 +238,7 @@ export function GoogleSheetsSync({
 
   const handleDisconnectScript = () => {
     if (confirm('คุณต้องการยกเลิกการซิงก์ผ่าน Google Apps Script หรือไม่?')) {
-      localStorage.removeItem('google_apps_script_url');
+      safeLocalStorage.removeItem('google_apps_script_url');
       onAppsScriptUrlChange(null);
       setScriptUrlInput('');
       setTestResult({ status: 'idle', message: '' });
@@ -721,7 +722,7 @@ function doPost(e) {
                       value={clientId}
                       onChange={(e) => {
                         setClientId(e.target.value);
-                        localStorage.setItem('custom_google_client_id', e.target.value);
+                        safeLocalStorage.setItem('custom_google_client_id', e.target.value);
                       }}
                       className="flex-1 bg-white border border-slate-200 p-2 rounded-lg text-xs font-mono outline-hidden focus:border-indigo-500"
                     />

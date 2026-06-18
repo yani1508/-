@@ -25,6 +25,8 @@ import {
   ShieldAlert, ShieldCheck, HeartPulse, LogIn, Users, Sliders, 
   Activity, Bell, BookOpen, Download, HardDrive, Info, MapPin
 } from 'lucide-react';
+import { safeLocalStorage } from './utils/localStorage';
+import { extractConfigFromUrl, syncConfigToUrl, DEFAULT_SHEET_ID, DEFAULT_SCRIPT_URL } from './utils/urlSync';
 import { motion, AnimatePresence } from 'motion/react';
 
 const safeParseJson = (text: string): any => {
@@ -40,7 +42,7 @@ export default function App() {
   const [patients, setPatients] = useState<Patient[]>(INITIAL_PATIENTS);
 
   const [categories, setCategories] = useState<DiseaseCategory[]>(() => {
-    const saved = localStorage.getItem('satun_categories');
+    const saved = safeLocalStorage.getItem('satun_categories');
     if (saved) {
       try {
         const parsed: DiseaseCategory[] = JSON.parse(saved);
@@ -54,30 +56,30 @@ export default function App() {
         // ignore
       }
     }
-    localStorage.setItem('satun_categories', JSON.stringify(DISEASE_CATEGORIES));
+    safeLocalStorage.setItem('satun_categories', JSON.stringify(DISEASE_CATEGORIES));
     return DISEASE_CATEGORIES;
   });
 
   const [resources, setResources] = useState<AreaResource[]>(() => {
-    const saved = localStorage.getItem('satun_resources');
+    const saved = safeLocalStorage.getItem('satun_resources');
     return saved ? JSON.parse(saved) : INITIAL_RESOURCES;
   });
 
   const [commands, setCommands] = useState<DispatchCommand[]>(() => {
-    const saved = localStorage.getItem('satun_commands');
+    const saved = safeLocalStorage.getItem('satun_commands');
     return saved ? JSON.parse(saved) : INITIAL_COMMANDS;
   });
 
   const [authenticatedRole, setAuthenticatedRole] = useState<string | null>(() => {
-    return localStorage.getItem('satun_active_role') || null;
+    return safeLocalStorage.getItem('satun_active_role') || null;
   });
 
   const [authenticatedName, setAuthenticatedName] = useState<string | null>(() => {
-    return localStorage.getItem('satun_active_name') || null;
+    return safeLocalStorage.getItem('satun_active_name') || null;
   });
 
   const [hasBackup, setHasBackup] = useState<boolean>(() => {
-    return !!localStorage.getItem('satun_patients_backup');
+    return !!safeLocalStorage.getItem('satun_patients_backup');
   });
 
   // --- ระบบเครือข่ายชื่อและรหัสผ่านจาก Google Sheets ทั้ง 3 ชีตหลัก ---
@@ -124,38 +126,31 @@ export default function App() {
 
   // --- ทรัพยากรระบบประสานงานคลาวด์ Google Sheets ---
   const [googleToken, setGoogleToken] = useState<string | null>(() => {
-    return localStorage.getItem('google_sheets_access_token');
+    return safeLocalStorage.getItem('google_sheets_access_token');
   });
   const [appsScriptUrl, setAppsScriptUrl] = useState<string | null>(() => {
-    return localStorage.getItem('google_apps_script_url') || 'https://script.google.com/macros/s/AKfycbwTzIT8AP8UJfwQ_WnSUc3S8J_ZVsRVRclwaGn8wQQW8D-WAN63nRdMVhJJgGLRUDLIEQ/exec';
+    const config = extractConfigFromUrl();
+    return config.scriptUrl || safeLocalStorage.getItem('google_apps_script_url') || DEFAULT_SCRIPT_URL;
   });
   const [syncLogs, setSyncLogs] = useState<{ id: string; time: string; type: 'success' | 'error' | 'info'; msg: string }[]>([]);
 
-  // ตรวจจับตัวแปร Apps Script URL จาก Query Params เพื่อติดตั้งรวดเร็วข้ามอุปกรณ์
+  // ตรวจจับตัวแปรจาก Query Params ทั้งแผง Google Sheets และ Apps Script เพื่อความรวดเร็วครอบคลุมมือถือและผู้เข้าชมชั่วคราว
   useEffect(() => {
     try {
-      const params = new URLSearchParams(window.location.search);
-      const paramUrl = params.get('scriptUrl') || params.get('google_apps_script_url');
-      if (paramUrl) {
-        const decodedUrl = decodeURIComponent(paramUrl);
-        localStorage.setItem('google_apps_script_url', decodedUrl);
-        setAppsScriptUrl(decodedUrl);
-        
-        // ลบค่าออกจากแถบ URL เพื่อความสวยงามสะอาดตา
-        params.delete('scriptUrl');
-        params.delete('google_apps_script_url');
-        const newSearch = params.toString();
-        const newPath = window.location.pathname + (newSearch ? '?' + newSearch : '') + window.location.hash;
-        window.history.replaceState(null, '', newPath);
-        
-        setTimeout(() => {
-          triggerNotification('✓ นำเข้าสิทธิ์การเขียนเชื่อมแผง Google Sheets สำเร็จแล้วบนมือถือเครื่องนี้!');
-        }, 1000);
+      const config = extractConfigFromUrl();
+      if (config.scriptUrl && config.scriptUrl !== DEFAULT_SCRIPT_URL) {
+        setAppsScriptUrl(config.scriptUrl);
       }
     } catch (e) {
-      console.error('Error auto-importing apps script url:', e);
+      console.error('Error auto-importing apps script configs:', e);
     }
   }, []);
+
+  // ส่งข้อมูลตั้งค่ากลับไปอยู่บน URL Search Parameters เพื่อส่งต่อประสานงานข้ามเครื่องได้ทันที
+  useEffect(() => {
+    const activeSheetId = safeLocalStorage.getItem('google_heatmap_sheet_id') || DEFAULT_SHEET_ID;
+    syncConfigToUrl(activeSheetId, appsScriptUrl);
+  }, [appsScriptUrl]);
 
   // ตรวจจับ hash สำเร็จลุล่วงจาก OAuth Google Sheets
   useEffect(() => {
@@ -164,7 +159,7 @@ export default function App() {
       const params = new URLSearchParams(hash.substring(1));
       const token = params.get('access_token');
       if (token) {
-        localStorage.setItem('google_sheets_access_token', token);
+        safeLocalStorage.setItem('google_sheets_access_token', token);
         setGoogleToken(token);
         // เคลียร์เศษ hash ของ URL
         window.history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -277,8 +272,8 @@ export default function App() {
   };
 
   const appendToGoogleSheet = async (sheetName: string, rowValues: any[]) => {
-    const tokenToUse = googleToken || localStorage.getItem('google_sheets_access_token');
-    const appsScriptUrlToUse = appsScriptUrl || localStorage.getItem('google_apps_script_url');
+    const tokenToUse = googleToken || safeLocalStorage.getItem('google_sheets_access_token');
+    const appsScriptUrlToUse = appsScriptUrl || safeLocalStorage.getItem('google_apps_script_url');
 
     // Prioritize or combine with Google Apps Script Web App sync
     if (appsScriptUrlToUse) {
@@ -361,8 +356,8 @@ export default function App() {
   };
 
   const appendRowsToGoogleSheet = async (sheetName: string, rowsValues: any[][]) => {
-    const tokenToUse = googleToken || localStorage.getItem('google_sheets_access_token');
-    const appsScriptUrlToUse = appsScriptUrl || localStorage.getItem('google_apps_script_url');
+    const tokenToUse = googleToken || safeLocalStorage.getItem('google_sheets_access_token');
+    const appsScriptUrlToUse = appsScriptUrl || safeLocalStorage.getItem('google_apps_script_url');
 
     if (appsScriptUrlToUse) {
       try {
@@ -444,7 +439,7 @@ export default function App() {
     const fetchLiveCredentials = async () => {
       setSyncCredsStatus('syncing');
 
-      const scriptUrlToUse = appsScriptUrl || localStorage.getItem('google_apps_script_url') || 'https://script.google.com/macros/s/AKfycbwTzIT8AP8UJfwQ_WnSUc3S8J_ZVsRVRclwaGn8wQQW8D-WAN63nRdMVhJJgGLRUDLIEQ/exec';
+      const scriptUrlToUse = appsScriptUrl || safeLocalStorage.getItem('google_apps_script_url') || DEFAULT_SCRIPT_URL;
       if (scriptUrlToUse) {
         try {
           const proxyUrl = `/api/proxy?url=${encodeURIComponent(`${scriptUrlToUse}?action=getCredentials`)}`;
@@ -469,7 +464,7 @@ export default function App() {
 
       try {
         const spreadsheetId = '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE';
-        const token = googleToken || localStorage.getItem('google_sheets_access_token');
+        const token = googleToken || safeLocalStorage.getItem('google_sheets_access_token');
         const headers: Record<string, string> = {};
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
@@ -563,8 +558,11 @@ export default function App() {
   useEffect(() => {
     let active = true;
     const fetchLivePatientsSync = async () => {
-      const spreadsheetId = localStorage.getItem('google_heatmap_sheet_id') || '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE';
+      const spreadsheetId = safeLocalStorage.getItem('google_heatmap_sheet_id') || DEFAULT_SHEET_ID;
       if (!spreadsheetId) return;
+
+      // Keep URL search parameters updated in background
+      syncConfigToUrl(spreadsheetId, appsScriptUrl);
 
       const exportUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=1433180548`;
       const proxyUrl = `/api/proxy?url=${encodeURIComponent(exportUrl)}`;
@@ -690,31 +688,31 @@ export default function App() {
 
   // ซิงก์หมวดกฎการจัดเก็บอื่น ๆ
   useEffect(() => {
-    localStorage.setItem('satun_categories', JSON.stringify(categories));
+    safeLocalStorage.setItem('satun_categories', JSON.stringify(categories));
   }, [categories]);
 
   useEffect(() => {
-    localStorage.setItem('satun_resources', JSON.stringify(resources));
+    safeLocalStorage.setItem('satun_resources', JSON.stringify(resources));
   }, [resources]);
 
   useEffect(() => {
-    localStorage.setItem('satun_commands', JSON.stringify(commands));
+    safeLocalStorage.setItem('satun_commands', JSON.stringify(commands));
   }, [commands]);
 
   // ซิงก์บทบาทปัจจุบัน
   useEffect(() => {
     if (authenticatedRole) {
-      localStorage.setItem('satun_active_role', authenticatedRole);
+      safeLocalStorage.setItem('satun_active_role', authenticatedRole);
     } else {
-      localStorage.removeItem('satun_active_role');
+      safeLocalStorage.removeItem('satun_active_role');
     }
   }, [authenticatedRole]);
 
   useEffect(() => {
     if (authenticatedName) {
-      localStorage.setItem('satun_active_name', authenticatedName);
+      safeLocalStorage.setItem('satun_active_name', authenticatedName);
     } else {
-      localStorage.removeItem('satun_active_name');
+      safeLocalStorage.removeItem('satun_active_name');
     }
   }, [authenticatedName]);
 
@@ -853,8 +851,8 @@ export default function App() {
     if (sheetName === 'Sheet1' || sheetName === 'Sheet6') {
       return true;
     }
-    const tokenToUse = googleToken || localStorage.getItem('google_sheets_access_token');
-    const appsScriptUrlToUse = appsScriptUrl || localStorage.getItem('google_apps_script_url');
+    const tokenToUse = googleToken || safeLocalStorage.getItem('google_sheets_access_token');
+    const appsScriptUrlToUse = appsScriptUrl || safeLocalStorage.getItem('google_apps_script_url');
 
     if (appsScriptUrlToUse) {
       try {
@@ -974,8 +972,8 @@ export default function App() {
     triggerNotification(`ลบคนไข้รหัส ${id} สำเร็จแล้ว`);
 
     // ไหลไปอัปเดต Google Sheet ทันทีหากเชื่อมอริจินัลแลกเปลี่ยน
-    const tokenToUse = googleToken || localStorage.getItem('google_sheets_access_token');
-    const appsScriptUrlToUse = appsScriptUrl || localStorage.getItem('google_apps_script_url');
+    const tokenToUse = googleToken || safeLocalStorage.getItem('google_sheets_access_token');
+    const appsScriptUrlToUse = appsScriptUrl || safeLocalStorage.getItem('google_apps_script_url');
 
     if (appsScriptUrlToUse || tokenToUse) {
       addSyncLog('info', `ตรวจพบการลบข้อมูลคนไข้ กำลังเริ่มปรับข้อมูลบนคลาวด์เขียนทับ...`);
@@ -991,8 +989,8 @@ export default function App() {
     setCommands([]);
     triggerNotification('ล้างฐานเก็บสะสมเดิมทั้งหมดเรียบร้อยแล้ว');
 
-    const tokenToUse = googleToken || localStorage.getItem('google_sheets_access_token');
-    const appsScriptUrlToUse = appsScriptUrl || localStorage.getItem('google_apps_script_url');
+    const tokenToUse = googleToken || safeLocalStorage.getItem('google_sheets_access_token');
+    const appsScriptUrlToUse = appsScriptUrl || safeLocalStorage.getItem('google_apps_script_url');
 
     if (appsScriptUrlToUse || tokenToUse) {
       addSyncLog('info', `กำลังส่งคำสั่งล้างตารางทั้งหมดบนคลาวด์...`);
@@ -1006,18 +1004,18 @@ export default function App() {
   const handleRestoreDefaults = () => {
     // เก็บ Backup ชั่วคราวก่อนย้อนคืนเพื่อความปลอดภัย
     try {
-      localStorage.setItem('satun_patients_backup', JSON.stringify(patients));
-      localStorage.setItem('satun_categories_backup', JSON.stringify(categories));
-      localStorage.setItem('satun_resources_backup', JSON.stringify(resources));
-      localStorage.setItem('satun_commands_backup', JSON.stringify(commands));
+      safeLocalStorage.setItem('satun_patients_backup', JSON.stringify(patients));
+      safeLocalStorage.setItem('satun_categories_backup', JSON.stringify(categories));
+      safeLocalStorage.setItem('satun_resources_backup', JSON.stringify(resources));
+      safeLocalStorage.setItem('satun_commands_backup', JSON.stringify(commands));
       setHasBackup(true);
     } catch (e) {
       console.error('ไม่สามารถจำล็อกไฟล์กู้ฐานข้อมูลอัตโนมัติได้:', e);
     }
 
-    localStorage.removeItem('satun_categories');
-    localStorage.removeItem('satun_resources');
-    localStorage.removeItem('satun_commands');
+    safeLocalStorage.removeItem('satun_categories');
+    safeLocalStorage.removeItem('satun_resources');
+    safeLocalStorage.removeItem('satun_commands');
     setPatients(INITIAL_PATIENTS);
     setCategories(DISEASE_CATEGORIES);
     setResources(INITIAL_RESOURCES);
@@ -1027,10 +1025,10 @@ export default function App() {
 
   // 8.5 กู้ข้อมูลหลังเผลอกดรีเซ็ตระบบ
   const handleUndoRestoreDefaults = () => {
-    const backupPatients = localStorage.getItem('satun_patients_backup');
-    const backupCategories = localStorage.getItem('satun_categories_backup');
-    const backupResources = localStorage.getItem('satun_resources_backup');
-    const backupCommands = localStorage.getItem('satun_commands_backup');
+    const backupPatients = safeLocalStorage.getItem('satun_patients_backup');
+    const backupCategories = safeLocalStorage.getItem('satun_categories_backup');
+    const backupResources = safeLocalStorage.getItem('satun_resources_backup');
+    const backupCommands = safeLocalStorage.getItem('satun_commands_backup');
 
     if (backupPatients || backupCategories || backupResources || backupCommands) {
       if (backupPatients) {
@@ -1038,21 +1036,21 @@ export default function App() {
       }
       if (backupCategories) {
         setCategories(JSON.parse(backupCategories));
-        localStorage.setItem('satun_categories', backupCategories);
+        safeLocalStorage.setItem('satun_categories', backupCategories);
       }
       if (backupResources) {
         setResources(JSON.parse(backupResources));
-        localStorage.setItem('satun_resources', backupResources);
+        safeLocalStorage.setItem('satun_resources', backupResources);
       }
       if (backupCommands) {
         setCommands(JSON.parse(backupCommands));
-        localStorage.setItem('satun_commands', backupCommands);
+        safeLocalStorage.setItem('satun_commands', backupCommands);
       }
 
-      localStorage.removeItem('satun_patients_backup');
-      localStorage.removeItem('satun_categories_backup');
-      localStorage.removeItem('satun_resources_backup');
-      localStorage.removeItem('satun_commands_backup');
+      safeLocalStorage.removeItem('satun_patients_backup');
+      safeLocalStorage.removeItem('satun_categories_backup');
+      safeLocalStorage.removeItem('satun_resources_backup');
+      safeLocalStorage.removeItem('satun_commands_backup');
       setHasBackup(false);
       triggerNotification('✓ กู้คืนข้อมูลเดิมก่อนการย้อนค่าโรงงานให้เรียบร้อยแล้ว!');
     } else {

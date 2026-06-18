@@ -24,6 +24,8 @@ import {
   History,
   FileSpreadsheet
 } from 'lucide-react';
+import { safeLocalStorage } from '../utils/localStorage';
+import { extractConfigFromUrl, syncConfigToUrl, DEFAULT_SHEET_ID } from '../utils/urlSync';
 import { motion, AnimatePresence } from 'motion/react';
 
 // ประกาศอินเตอร์เฟซเฉพาะสำหรับตำบลความร้อน
@@ -44,8 +46,13 @@ interface HeatmapViewProps {
 
 export default function HeatmapView({ onBackToLogin, categories = DISEASE_CATEGORIES, authenticatedRole }: HeatmapViewProps) {
   const [spreadsheetId, setSpreadsheetId] = useState<string>(() => {
-    return localStorage.getItem('google_heatmap_sheet_id') || '1x4sKAQUPVJUXC5-OYqXHPZiVS8qr_sQskQut6r2OOWE';
+    const config = extractConfigFromUrl();
+    return config.sheetId || safeLocalStorage.getItem('google_heatmap_sheet_id') || DEFAULT_SHEET_ID;
   });
+
+  useEffect(() => {
+    syncConfigToUrl(spreadsheetId, null);
+  }, [spreadsheetId]);
   
   const [patients, setPatients] = useState<Patient[]>(INITIAL_PATIENTS);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -319,7 +326,7 @@ export default function HeatmapView({ onBackToLogin, categories = DISEASE_CATEGO
     const newId = extractSpreadsheetId(sheetUrlInput);
     if (newId) {
       setSpreadsheetId(newId);
-      localStorage.setItem('google_heatmap_sheet_id', newId);
+      safeLocalStorage.setItem('google_heatmap_sheet_id', newId);
       setShowConfig(false);
     }
   };

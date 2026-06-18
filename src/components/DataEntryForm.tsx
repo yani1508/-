@@ -11,6 +11,7 @@ import {
   HelpCircle, Eye, EyeOff, LayoutList, ClipboardCheck, AlertTriangle,
   RefreshCw, FileSpreadsheet, Database
 } from 'lucide-react';
+import { safeLocalStorage } from '../utils/localStorage';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface DataEntryFormProps {
@@ -178,7 +179,7 @@ export default function DataEntryForm({
       logs.push(`[เชื่อมโยง] ดึงข้อมูลจำลองปราศจากปัญหา CORS ผ่าน API Proxy...`);
       setSyncLogs([...logs]);
 
-      const token = localStorage.getItem('google_sheets_access_token');
+      const token = safeLocalStorage.getItem('google_sheets_access_token');
       const proxyUrl = `/api/proxy?url=${encodeURIComponent(exportUrl)}`;
       const headers: Record<string, string> = {};
       if (token) {
