@@ -1154,25 +1154,7 @@ export default function App() {
                   กรุณาลงชื่อเข้าใช้ด้วยรหัสประจำตัวและรหัสผ่านที่ประสานร่วมกับฐานข้อมูล Google Sheets
                 </p>
 
-                {/* แสดงสถานะการซิงค์รหัสผ่านจากต้นทาง */}
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/50 border border-white/5 text-[10px] text-indigo-300 font-mono">
-                  {syncCredsStatus === 'syncing' ? (
-                    <>
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                      กำลังรีโหลดข้อมูลรหัสผ่านเชิงรับ (Sheet 2, 3, 4)...
-                    </>
-                  ) : syncCredsStatus === 'success' ? (
-                    <>
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      เชื่อมโยงสิทธิ์ Google Sheets สำเร็จแบบ Live
-                    </>
-                  ) : (
-                    <>
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-                      สลับสิทธิ์โปรไฟล์สำรองภายในระบบสำเร็จ
-                    </>
-                  )}
-                </div>
+                {/* ลบแถบแสดงสถานะตามคำขอผู้ใช้ แต่ระเบียบการเชื่อมโยงเบื้องหลังทำงานปกติ */}
               </div>
 
               {hasBackup && (
